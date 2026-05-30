@@ -1,0 +1,8 @@
+# build
+build/
+
+# backup files
+bak/
+
+# caches
+cache/
