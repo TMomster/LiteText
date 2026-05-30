@@ -1,0 +1,79 @@
+﻿#ifndef SYNTAXHIGHLIGHTER_H
+#define SYNTAXHIGHLIGHTER_H
+
+#include <QSyntaxHighlighter>
+#include <QTextCharFormat>
+#include <QRegularExpression>
+#include <QVector>
+
+class SyntaxHighlighter : public QSyntaxHighlighter
+{
+    Q_OBJECT
+
+public:
+    explicit SyntaxHighlighter(QTextDocument *parent = nullptr);
+    ~SyntaxHighlighter();
+
+    void setLanguage(const QString &suffix);
+    void setColorScheme(int scheme);   // 0标准 1Web 2鲜艳
+
+protected:
+    void highlightBlock(const QString &text) override;
+
+private:
+    struct HighlightingRule
+    {
+        QRegularExpression pattern;
+        QTextCharFormat format;
+    };
+
+    QVector<HighlightingRule> m_rules;
+
+    // 多行注释（C/C++/Java/JS/CSS）
+    QRegularExpression m_commentStartExpression;
+    QRegularExpression m_commentEndExpression;
+    QTextCharFormat m_multiLineCommentFormat;
+
+    // Python 三引号字符串（跨行）
+    QRegularExpression m_tripleQuoteStartExpression;
+    QRegularExpression m_tripleQuoteEndExpression;
+    QTextCharFormat m_tripleQuoteFormat;
+
+    // 格式定义
+    QTextCharFormat m_keywordFormat;
+    QTextCharFormat m_typeFormat;
+    QTextCharFormat m_constantFormat;
+    QTextCharFormat m_functionFormat;
+    QTextCharFormat m_methodFormat;
+    QTextCharFormat m_stringFormat;
+    QTextCharFormat m_charFormat;
+    QTextCharFormat m_numberFormat;
+    QTextCharFormat m_commentFormat;
+    QTextCharFormat m_preprocessorFormat;
+    QTextCharFormat m_operatorFormat;
+    QTextCharFormat m_htmlTagFormat;
+    QTextCharFormat m_htmlAttributeFormat;
+    QTextCharFormat m_cssSelectorFormat;
+    QTextCharFormat m_cssPropertyFormat;
+    QTextCharFormat m_cssValueFormat;
+    QTextCharFormat m_variableFormat;
+    QTextCharFormat m_classNameFormat;
+    QTextCharFormat m_macroFormat;
+
+    QString m_currentLanguage;
+    int m_currentColorScheme;
+
+    void setupFormats();
+    void clearRules();
+    void applyCommonRules();
+    void addStringRules();
+    void setupCppRules();
+    void setupJavaRules();
+    void setupPythonRules();
+    void setupJavaScriptRules();
+    void setupHtmlRules();
+    void setupCssRules();
+    void setupPlainRules();
+};
+
+#endif // SYNTAXHIGHLIGHTER_H
