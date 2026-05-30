@@ -38,8 +38,7 @@ private slots:
     void updateCursorPosition();
     void onEditorStatusMessage(const QString &msg);
     void changeColorScheme(int scheme);
-    void onTabWidthChanged(int newWidth);
-    void onLanguageChanged(const QString &suffix);
+    void onTabWidthChanged(int newWidth);   // 响应 Tab 宽度变化
 
 private:
     void createMenuBar();

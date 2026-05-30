@@ -59,6 +59,7 @@ MainWindow::MainWindow(QWidget *parent)
     createMenuBar();
     createStatusBar();
 
+    // 深色配色
     QPalette pal = m_editor->palette();
     pal.setColor(QPalette::Base, QColor(30, 30, 30));
     pal.setColor(QPalette::Text, QColor(220, 220, 220));
@@ -105,23 +106,17 @@ void MainWindow::reloadSettings()
     m_editor->setZoomBaseFontSize(fontSize);
 
     m_highlighter->setColorScheme(colorScheme);
+    // 读取保存的编码
     QString savedEnc = settings.value("editor/encoding", "UTF-8").toString();
     if (savedEnc != m_currentEncoding) {
         m_currentEncoding = savedEnc;
         updateStatusBar();
     }
-
-    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
-    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
-    m_editor->setAutoCompletionEnabled(autoCompletion);
-    m_editor->setCompletionAcceptKey(acceptKey);
-
-    // 刷新关键字列表（当前语言）
-    onLanguageChanged(m_highlighter->property("currentLanguage").toString());
 }
 
 void MainWindow::createMenuBar()
 {
+    // 文件菜单
     QMenu *fileMenu = menuBar()->addMenu("文件(&F)");
     QAction *newAction = new QAction("新建(&N)", this);
     newAction->setShortcut(QKeySequence::New);
@@ -149,17 +144,22 @@ void MainWindow::createMenuBar()
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     fileMenu->addAction(exitAction);
 
+    // 编辑菜单
     QMenu *editMenu = menuBar()->addMenu("编辑(&E)");
     QAction *findAction = new QAction("查找/替换(&F)", this);
     findAction->setShortcut(QKeySequence::Find);
     connect(findAction, &QAction::triggered, this, &MainWindow::showFindReplaceDialog);
     editMenu->addAction(findAction);
 
+    // 设置菜单
     QMenu *settingsMenu = menuBar()->addMenu("设置(&S)");
+
+    // 字体设置（保留原对话框）
     QAction *fontAction = new QAction("字体设置(&F)...", this);
     connect(fontAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
     settingsMenu->addAction(fontAction);
 
+    // 配色方案子菜单
     QMenu *colorMenu = settingsMenu->addMenu("配色方案(&C)");
     QAction *schemeStd = new QAction("标准 (VS Code)", this);
     QAction *schemeWeb = new QAction("Web (GitHub)", this);
@@ -171,6 +171,7 @@ void MainWindow::createMenuBar()
     colorMenu->addAction(schemeWeb);
     colorMenu->addAction(schemeVivid);
 
+    // 编码子菜单
     QMenu *encodingMenu = settingsMenu->addMenu("默认编码(&E)");
     QStringList encodings = {"UTF-8", "UTF-8-BOM", "GBK"};
     for (const QString &enc : encodings) {
@@ -179,6 +180,7 @@ void MainWindow::createMenuBar()
         encodingMenu->addAction(action);
     }
 
+    // 帮助菜单
     QMenu *helpMenu = menuBar()->addMenu("帮助(&H)");
     QAction *aboutAction = new QAction("关于(&A)", this);
     connect(aboutAction, &QAction::triggered, this, &MainWindow::about);
@@ -214,7 +216,7 @@ void MainWindow::openFile()
 
     QString filePath = QFileDialog::getOpenFileName(this,
         "打开文件", QString(),
-        "代码文件 (*.cpp *.c *.h *.hpp *.java *.py *.js *.html *.htm *.css *.txt *.json);;所有文件 (*.*)");
+        "代码文件 (*.cpp *.c *.h *.hpp *.java *.py *.js *.html *.htm *.css *.txt);;所有文件 (*.*)");
 
     if (filePath.isEmpty()) return;
     openFileFromPath(filePath);
@@ -329,6 +331,7 @@ bool MainWindow::saveFileWithEncoding(const QString &path, const QString &encodi
 void MainWindow::setFileEncoding(const QString &encoding)
 {
     m_currentEncoding = encoding;
+    // 保存到配置文件
     QSettings settings(configFilePath(), QSettings::IniFormat);
     settings.setValue("editor/encoding", encoding);
     updateStatusBar();
@@ -346,7 +349,7 @@ bool MainWindow::saveFileAs()
 {
     QString filePath = QFileDialog::getSaveFileName(this,
         "保存文件", QString(),
-        "代码文件 (*.cpp *.c *.h *.hpp *.java *.py *.js *.html *.htm *.css *.txt *.json);;所有文件 (*.*)");
+        "代码文件 (*.cpp *.c *.h *.hpp *.java *.py *.js *.html *.htm *.css *.txt);;所有文件 (*.*)");
 
     if (filePath.isEmpty()) return false;
     return saveFileWithEncoding(filePath, m_currentEncoding);
@@ -405,6 +408,27 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::about()
 {
+    QString lGPLComplianceText =
+        "本软件使用 Qt 框架开发。\n"
+        "\n"
+        "Qt 框架由 The Qt Company Ltd. 及其贡献者版权所有，并根据 GNU 宽通用公共许可证 "
+        "(LGPL) 版本 3 提供。\n"
+        "本软件是作为“使用该库的作品”与 Qt 库动态链接而创建的。\n"
+        "因此，LGPL 版本 3 的条款适用于 Qt 库，但不强制要求公开本软件自身的源代码。\n"
+        "然而，您拥有以下不可撤销的权利：\n"
+        "  • 修改 Qt 库并重新链接本软件；\n"
+        "  • 对本软件进行反向工程以调试这些修改；\n"
+        "  • 将本软件与您修改的 Qt 库版本重新组合。\n"
+        "\n"
+        "完整的 GNU LGPL 版本 3 许可协议文本可在以下位置找到：\n"
+        "  https://www.gnu.org/licenses/lgpl-3.0.html\n"
+        "\n"
+        "Qt 库的源代码可通过以下渠道获取：\n"
+        "  • 官方下载页面：https://download.qt.io/\n"
+        "  • Qt 官方代码仓库：https://code.qt.io/cgit/\n"
+        "\n"
+        "Qt 是 The Qt Company Ltd. 的注册商标。";
+
     QString aboutText =
         QString("<h2>LiteText %1</h2>")
         .arg(VERSION_STRING) +
@@ -426,7 +450,7 @@ void MainWindow::about()
         "<p>特性：</p>"
         "<ul>"
         "<li>深色配色方案</li>"
-        "<li>多语言语法高亮：C/C++, Java, Python, JavaScript, HTML, CSS, XML, JSON, .gitignore, .properties, .ini</li>"
+        "<li>多语言语法高亮：C/C++, Java, Python, JavaScript, HTML, CSS, XML, .gitignore, .properties, .ini</li>"
         "<li>根据文件后缀自动识别高亮规则</li>"
         "<li>行号显示</li>"
         "<li>查找/替换（Ctrl+F）</li>"
@@ -434,7 +458,6 @@ void MainWindow::about()
         "<li>自定义字体</li>"
         "<li>Ctrl+滚轮缩放</li>"
         "<li>Tab 行为配置（插入制表符或空格）</li>"
-        "<li>智慧联想：内联建议，自动补全关键字和文档内标识符，可自定义开关及采纳键</li>"
         "</ul>"
         "<p>使用 Qt 6.11.0 + C++17 构建</p>";
 
@@ -540,22 +563,12 @@ void MainWindow::updateHighlighterForFile(const QString &filePath)
         suffix = "ini";
     else if (suffix == "yaml" || suffix == "yml")
         suffix = "yaml";
-    else if (suffix == "json")
-        suffix = "json";
     else if (suffix == "gitignore")
         suffix = "gitignore";
     else
         suffix = "txt";
 
     m_highlighter->setLanguage(suffix);
-    onLanguageChanged(suffix);
-}
-
-void MainWindow::onLanguageChanged(const QString &suffix)
-{
-    Q_UNUSED(suffix);
-    QStringList keywords = m_highlighter->getCurrentKeywords();
-    m_editor->setKeywordList(keywords);
 }
 
 void MainWindow::updateCursorPosition()
@@ -650,7 +663,6 @@ void MainWindow::changeColorScheme(int scheme)
 
 void MainWindow::onTabWidthChanged(int newWidth)
 {
-    Q_UNUSED(newWidth);
     updateStatusBar();
 }
 
@@ -664,3 +676,4 @@ void MainWindow::restartApplication(const QString &fileToOpen)
     QProcess::startDetached(appPath, arguments);
     QCoreApplication::quit();
 }
+

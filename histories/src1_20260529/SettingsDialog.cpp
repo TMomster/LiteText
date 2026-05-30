@@ -9,16 +9,16 @@
 #include <QFontDatabase>
 #include <QSettings>
 #include <QDir>
-#include <QGroupBox>
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle("设置");
-    setFixedSize(450, 400);
+    setFixedSize(400, 280);
 
     QVBoxLayout *layout = new QVBoxLayout(this);
 
+    // 字体行
     QHBoxLayout *fontLayout = new QHBoxLayout;
     fontLayout->addWidget(new QLabel("字体:"));
     m_fontCombo = new QComboBox;
@@ -26,6 +26,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     fontLayout->addWidget(m_fontCombo);
     layout->addLayout(fontLayout);
 
+    // 字号行
     QHBoxLayout *sizeLayout = new QHBoxLayout;
     sizeLayout->addWidget(new QLabel("字号:"));
     m_fontSizeSpin = new QSpinBox;
@@ -33,19 +34,23 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     sizeLayout->addWidget(m_fontSizeSpin);
     layout->addLayout(sizeLayout);
 
+    // Tab 宽度行（空格数量）
     QHBoxLayout *tabLayout = new QHBoxLayout;
     tabLayout->addWidget(new QLabel("Tab 空格数:"));
     m_tabWidthSpin = new QSpinBox;
     m_tabWidthSpin->setRange(1, 8);
+    m_tabWidthSpin->setToolTip("按 Tab 键时插入的空格数量（仅在下方选择“插入空格”时生效）");
     tabLayout->addWidget(m_tabWidthSpin);
     layout->addLayout(tabLayout);
 
+    // Tab 行为行
     QHBoxLayout *behaviorLayout = new QHBoxLayout;
     behaviorLayout->addWidget(new QLabel("Tab 行为:"));
     m_useTabsCheck = new QCheckBox("插入制表符（否则插入空格）");
     behaviorLayout->addWidget(m_useTabsCheck);
     layout->addLayout(behaviorLayout);
 
+    // 配色方案行
     QHBoxLayout *schemeLayout = new QHBoxLayout;
     schemeLayout->addWidget(new QLabel("配色方案:"));
     m_colorSchemeCombo = new QComboBox;
@@ -53,21 +58,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     schemeLayout->addWidget(m_colorSchemeCombo);
     layout->addLayout(schemeLayout);
 
-    QGroupBox *completionGroup = new QGroupBox("智慧联想");
-    QVBoxLayout *completionLayout = new QVBoxLayout(completionGroup);
-    m_autoCompletionCheck = new QCheckBox("启用智慧联想");
-    completionLayout->addWidget(m_autoCompletionCheck);
-    QHBoxLayout *keyLayout = new QHBoxLayout;
-    keyLayout->addWidget(new QLabel("采纳建议的快捷键:"));
-    m_acceptKeyCombo = new QComboBox;
-    m_acceptKeyCombo->addItem("Tab", Qt::Key_Tab);
-    m_acceptKeyCombo->addItem("Enter", Qt::Key_Enter);
-    m_acceptKeyCombo->addItem("Return", Qt::Key_Return);
-    m_acceptKeyCombo->addItem("Space", Qt::Key_Space);
-    keyLayout->addWidget(m_acceptKeyCombo);
-    completionLayout->addLayout(keyLayout);
-    layout->addWidget(completionGroup);
-
+    // 按钮行
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     m_okButton = new QPushButton("确定");
     m_cancelButton = new QPushButton("取消");
@@ -103,12 +94,6 @@ void SettingsDialog::loadSettings()
     m_colorSchemeCombo->setCurrentIndex(colorScheme);
     m_tabWidthSpin->setValue(tabWidth);
     m_useTabsCheck->setChecked(useTabs);
-
-    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
-    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
-    m_autoCompletionCheck->setChecked(autoCompletion);
-    int keyIndex = m_acceptKeyCombo->findData(acceptKey);
-    if (keyIndex >= 0) m_acceptKeyCombo->setCurrentIndex(keyIndex);
 }
 
 void SettingsDialog::saveSettings()
@@ -119,16 +104,27 @@ void SettingsDialog::saveSettings()
     settings.setValue("editor/colorScheme", m_colorSchemeCombo->currentIndex());
     settings.setValue("editor/tabWidth", m_tabWidthSpin->value());
     settings.setValue("editor/useTabs", m_useTabsCheck->isChecked());
-    settings.setValue("editor/autoCompletion", m_autoCompletionCheck->isChecked());
-    settings.setValue("editor/completionAcceptKey", m_acceptKeyCombo->currentData().toInt());
 }
 
-int SettingsDialog::getTabWidth() const { return m_tabWidthSpin->value(); }
-bool SettingsDialog::getUseTabs() const { return m_useTabsCheck->isChecked(); }
-QFont SettingsDialog::getSelectedFont() const { return QFont(m_fontCombo->currentText(), m_fontSizeSpin->value()); }
-int SettingsDialog::getFontSize() const { return m_fontSizeSpin->value(); }
-bool SettingsDialog::isAutoCompletionEnabled() const { return m_autoCompletionCheck->isChecked(); }
-int SettingsDialog::getCompletionAcceptKey() const { return m_acceptKeyCombo->currentData().toInt(); }
+int SettingsDialog::getTabWidth() const
+{
+    return m_tabWidthSpin->value();
+}
+
+bool SettingsDialog::getUseTabs() const
+{
+    return m_useTabsCheck->isChecked();
+}
+
+QFont SettingsDialog::getSelectedFont() const
+{
+    return QFont(m_fontCombo->currentText(), m_fontSizeSpin->value());
+}
+
+int SettingsDialog::getFontSize() const
+{
+    return m_fontSizeSpin->value();
+}
 
 void SettingsDialog::accept()
 {

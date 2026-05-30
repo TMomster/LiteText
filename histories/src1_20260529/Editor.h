@@ -4,10 +4,6 @@
 #include <QPlainTextEdit>
 #include <QPaintEvent>
 #include <QResizeEvent>
-#include <QTextCharFormat>
-#include <QSet>
-#include <QRegularExpression>
-#include <QTextCursor>
 
 class QWidget;
 class EditorSidebar;
@@ -23,18 +19,17 @@ public:
     void zoomIn();
     void zoomOut();
     void setZoomBaseFontSize(int size);
-    void setTabWidth(int spaces);
+    void setTabWidth(int spaces);   // 设置 Tab 展开的空格数（插入空格时使用）
     int tabWidth() const;
+
+    // Tab 行为：true=插入制表符，false=插入空格
     void setUseTabs(bool use);
     bool useTabs() const { return m_useTabs; }
-    void setFont(const QFont &font);
-    void setAutoCompletionEnabled(bool enabled);
-    bool isAutoCompletionEnabled() const { return m_autoCompletionEnabled; }
-    void setCompletionAcceptKey(int key);
-    int completionAcceptKey() const { return m_completionAcceptKey; }
-    void setKeywordList(const QStringList &keywords);
 
-    // 公共包装器（行号侧边栏需要）
+    // 设置字体并更新制表符显示宽度（公共方法）
+    void setFont(const QFont &font);
+
+    // 公共包装器
     QTextBlock firstVisibleBlockPublic() const;
     QRectF blockBoundingGeometryPublic(const QTextBlock &block) const;
     QPointF contentOffsetPublic() const;
@@ -47,41 +42,24 @@ signals:
 protected:
     void keyPressEvent(QKeyEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
-    void paintEvent(QPaintEvent *event) override;
 
 private slots:
     void updateSidebarGeometry();
     void updateSidebar();
-    void onDocumentContentsChanged();
-    void onCursorPositionChanged();
 
 private:
     EditorSidebar *m_sidebar;
     int m_zoomBaseFontSize;
-    int m_tabWidth;
-    bool m_useTabs;
-    bool m_autoCompletionEnabled;
-    int m_completionAcceptKey;
-    QString m_pendingCompletion;
-    QTextCharFormat m_suggestionFormat;
-    QSet<QString> m_identifierSet;
-    QStringList m_keywordList;
+    int m_tabWidth;          // Tab 键插入的空格数（仅在 m_useTabs==false 时生效）
+    bool m_useTabs;          // true=插入\t，false=插入空格
 
-    // 新的辅助函数：最长公共前缀计算
-    QString longestCommonPrefix(const QStringList &strs);
-    // 新的核心函数：更聪明的上下文感知补全构建
-    void buildSuggestion();
-
-    void collectIdentifiersFromDocument();
-    void clearSuggestion();
-    void acceptSuggestion();
-
-    void updateTabStopWidth();
+    void updateTabStopWidth();   // 更新制表符显示宽度（固定为四个空格）
     void copyLine();
     void cutLine();
     void insertLineBelowKeepCursor();
     void duplicateLine();
-    void insertIndentedNewLine();
+    void insertIndentedNewLine();   // 换行并保持缩进
+    void deleteIndentation();       // 删除一个缩进级别（如果光标前是空格）
 };
 
 class EditorSidebar : public QWidget

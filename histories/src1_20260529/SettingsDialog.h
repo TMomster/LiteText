@@ -22,9 +22,6 @@ public:
     int getTabWidth() const;
     bool getUseTabs() const;
 
-    bool isAutoCompletionEnabled() const;
-    int getCompletionAcceptKey() const;
-
 private slots:
     void accept() override;
 
@@ -32,10 +29,8 @@ private:
     QComboBox *m_fontCombo;
     QSpinBox *m_fontSizeSpin;
     QComboBox *m_colorSchemeCombo;
-    QSpinBox *m_tabWidthSpin;
-    QCheckBox *m_useTabsCheck;
-    QCheckBox *m_autoCompletionCheck;
-    QComboBox *m_acceptKeyCombo;
+    QSpinBox *m_tabWidthSpin;      // Tab 空格数（仅当不使用制表符时有效）
+    QCheckBox *m_useTabsCheck;     // true=插入制表符，false=插入空格
     QPushButton *m_okButton;
     QPushButton *m_cancelButton;
 

@@ -5,7 +5,6 @@
 #include <QTextCharFormat>
 #include <QRegularExpression>
 #include <QVector>
-#include <QStringList>
 
 class SyntaxHighlighter : public QSyntaxHighlighter
 {
@@ -16,8 +15,7 @@ public:
     ~SyntaxHighlighter();
 
     void setLanguage(const QString &suffix);
-    void setColorScheme(int scheme);
-    QStringList getCurrentKeywords() const;
+    void setColorScheme(int scheme);   // 0标准 1Web 2鲜艳
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -31,14 +29,17 @@ private:
 
     QVector<HighlightingRule> m_rules;
 
+    // 多行注释（C/C++/Java/JS/CSS）
     QRegularExpression m_commentStartExpression;
     QRegularExpression m_commentEndExpression;
     QTextCharFormat m_multiLineCommentFormat;
 
+    // Python 三引号字符串（跨行）
     QRegularExpression m_tripleQuoteStartExpression;
     QRegularExpression m_tripleQuoteEndExpression;
     QTextCharFormat m_tripleQuoteFormat;
 
+    // 格式定义
     QTextCharFormat m_keywordFormat;
     QTextCharFormat m_typeFormat;
     QTextCharFormat m_constantFormat;
@@ -61,7 +62,6 @@ private:
 
     QString m_currentLanguage;
     int m_currentColorScheme;
-    QStringList m_currentKeywords;
 
     void setupFormats();
     void clearRules();
@@ -74,12 +74,11 @@ private:
     void setupHtmlRules();
     void setupCssRules();
     void setupPlainRules();
-    void setupXmlRules();
-    void setupGitignoreRules();
-    void setupPropertiesRules();
-    void setupIniRules();
-    void setupYamlRules();
-    void setupJsonRules();          // 新增 JSON 高亮
+    void setupXmlRules();               // XML（复用HTML）
+    void setupGitignoreRules();        // .gitignore
+    void setupPropertiesRules();       // .properties
+    void setupIniRules();              // .ini
+    void setupYamlRules();             // YAML (.yaml, .yml)
 };
 
 #endif // SYNTAXHIGHLIGHTER_H
