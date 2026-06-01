@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QRegularExpression>
 #include <QTextCursor>
+#include <QHash>
 
 class QWidget;
 class EditorSidebar;
@@ -34,11 +35,18 @@ public:
     int completionAcceptKey() const { return m_completionAcceptKey; }
     void setKeywordList(const QStringList &keywords);
 
+    // 自动换行
+    void setWordWrapEnabled(bool enabled);
+    bool wordWrapEnabled() const { return m_wordWrapEnabled; }
+
     // 公共包装器（行号侧边栏需要）
     QTextBlock firstVisibleBlockPublic() const;
     QRectF blockBoundingGeometryPublic(const QTextBlock &block) const;
     QPointF contentOffsetPublic() const;
     QRectF blockBoundingRectPublic(const QTextBlock &block) const;
+
+    // 由 MainWindow 调用，用于根据语法高亮语言设置注释前缀
+    void setCurrentLanguage(const QString &lang);
 
 signals:
     void statusMessage(const QString &msg);
@@ -67,11 +75,14 @@ private:
     QSet<QString> m_identifierSet;
     QStringList m_keywordList;
 
-    // 新的辅助函数：最长公共前缀计算
-    QString longestCommonPrefix(const QStringList &strs);
-    // 新的核心函数：更聪明的上下文感知补全构建
-    void buildSuggestion();
+    bool m_wordWrapEnabled;   // 自动换行开关
 
+    // 注释功能
+    QString m_currentLanguage;
+    QString m_commentPrefix;
+
+    QString longestCommonPrefix(const QStringList &strs);
+    void buildSuggestion();
     void collectIdentifiersFromDocument();
     void clearSuggestion();
     void acceptSuggestion();
@@ -82,6 +93,10 @@ private:
     void insertLineBelowKeepCursor();
     void duplicateLine();
     void insertIndentedNewLine();
+
+    void toggleCommentSelection();  // Ctrl+/ 切换注释
+    void indentSelection();     // 选中行增加缩进
+    void unindentSelection();   // 选中行减少缩进
 };
 
 class EditorSidebar : public QWidget
