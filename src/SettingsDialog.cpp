@@ -15,44 +15,52 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle("设置");
-    setFixedSize(450, 400);
+    setMinimumSize(480, 500);
 
     QVBoxLayout *layout = new QVBoxLayout(this);
 
-    QHBoxLayout *fontLayout = new QHBoxLayout;
+    // 字体
+    QGroupBox *fontGroup = new QGroupBox("字体");
+    QHBoxLayout *fontLayout = new QHBoxLayout(fontGroup);
     fontLayout->addWidget(new QLabel("字体:"));
     m_fontCombo = new QComboBox;
     m_fontCombo->addItems(QFontDatabase().families());
     fontLayout->addWidget(m_fontCombo);
-    layout->addLayout(fontLayout);
-
-    QHBoxLayout *sizeLayout = new QHBoxLayout;
-    sizeLayout->addWidget(new QLabel("字号:"));
+    fontLayout->addWidget(new QLabel("字号:"));
     m_fontSizeSpin = new QSpinBox;
     m_fontSizeSpin->setRange(6, 72);
-    sizeLayout->addWidget(m_fontSizeSpin);
-    layout->addLayout(sizeLayout);
+    fontLayout->addWidget(m_fontSizeSpin);
+    layout->addWidget(fontGroup);
 
-    QHBoxLayout *tabLayout = new QHBoxLayout;
+    // 自动换行
+    QGroupBox *wrapGroup = new QGroupBox("自动换行");
+    QHBoxLayout *wrapLayout = new QHBoxLayout(wrapGroup);
+    m_wordWrapCheck = new QCheckBox("启用自动换行 (仅影响显示，不改变行号)");
+    wrapLayout->addWidget(m_wordWrapCheck);
+    layout->addWidget(wrapGroup);
+
+    // Tab键行为
+    QGroupBox *tabGroup = new QGroupBox("Tab键行为");
+    QHBoxLayout *tabLayout = new QHBoxLayout(tabGroup);
     tabLayout->addWidget(new QLabel("Tab 空格数:"));
     m_tabWidthSpin = new QSpinBox;
     m_tabWidthSpin->setRange(1, 8);
     tabLayout->addWidget(m_tabWidthSpin);
-    layout->addLayout(tabLayout);
+    tabLayout->addStretch();
+    m_useTabsCheck = new QCheckBox("插入制表符 (否则插入空格)");
+    tabLayout->addWidget(m_useTabsCheck);
+    layout->addWidget(tabGroup);
 
-    QHBoxLayout *behaviorLayout = new QHBoxLayout;
-    behaviorLayout->addWidget(new QLabel("Tab 行为:"));
-    m_useTabsCheck = new QCheckBox("插入制表符（否则插入空格）");
-    behaviorLayout->addWidget(m_useTabsCheck);
-    layout->addLayout(behaviorLayout);
-
-    QHBoxLayout *schemeLayout = new QHBoxLayout;
-    schemeLayout->addWidget(new QLabel("配色方案:"));
+    // 配色方案
+    QGroupBox *schemeGroup = new QGroupBox("配色方案");
+    QHBoxLayout *schemeLayout = new QHBoxLayout(schemeGroup);
+    schemeLayout->addWidget(new QLabel("配色:"));
     m_colorSchemeCombo = new QComboBox;
-    m_colorSchemeCombo->addItems({"标准 (VS Code)", "Web (GitHub)", "鲜艳 (高对比)"});
+    m_colorSchemeCombo->addItems({"标准", "Web", "鲜艳"});
     schemeLayout->addWidget(m_colorSchemeCombo);
-    layout->addLayout(schemeLayout);
+    layout->addWidget(schemeGroup);
 
+    // 智慧联想
     QGroupBox *completionGroup = new QGroupBox("智慧联想");
     QVBoxLayout *completionLayout = new QVBoxLayout(completionGroup);
     m_autoCompletionCheck = new QCheckBox("启用智慧联想");
@@ -68,6 +76,16 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     completionLayout->addLayout(keyLayout);
     layout->addWidget(completionGroup);
 
+    // 文件编码
+    QGroupBox *encodingGroup = new QGroupBox("文件编码");
+    QHBoxLayout *encodingLayout = new QHBoxLayout(encodingGroup);
+    encodingLayout->addWidget(new QLabel("默认编码:"));
+    m_encodingCombo = new QComboBox;
+    m_encodingCombo->addItems({"UTF-8", "UTF-8-BOM", "GBK", "ANSI"});
+    encodingLayout->addWidget(m_encodingCombo);
+    layout->addWidget(encodingGroup);
+
+    // 按钮
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     m_okButton = new QPushButton("确定");
     m_cancelButton = new QPushButton("取消");
@@ -96,19 +114,23 @@ void SettingsDialog::loadSettings()
     int colorScheme = settings.value("editor/colorScheme", 0).toInt();
     int tabWidth = settings.value("editor/tabWidth", 4).toInt();
     bool useTabs = settings.value("editor/useTabs", false).toBool();
+    bool wordWrap = settings.value("editor/wordWrap", true).toBool();
+    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
+    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
+    QString encoding = settings.value("editor/defaultEncoding", "UTF-8").toString();
 
-    int index = m_fontCombo->findText(fontFamily);
-    if (index >= 0) m_fontCombo->setCurrentIndex(index);
+    int idx = m_fontCombo->findText(fontFamily);
+    if (idx >= 0) m_fontCombo->setCurrentIndex(idx);
     m_fontSizeSpin->setValue(fontSize);
     m_colorSchemeCombo->setCurrentIndex(colorScheme);
     m_tabWidthSpin->setValue(tabWidth);
     m_useTabsCheck->setChecked(useTabs);
-
-    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
-    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
+    m_wordWrapCheck->setChecked(wordWrap);
     m_autoCompletionCheck->setChecked(autoCompletion);
-    int keyIndex = m_acceptKeyCombo->findData(acceptKey);
-    if (keyIndex >= 0) m_acceptKeyCombo->setCurrentIndex(keyIndex);
+    int keyIdx = m_acceptKeyCombo->findData(acceptKey);
+    if (keyIdx >= 0) m_acceptKeyCombo->setCurrentIndex(keyIdx);
+    int encIdx = m_encodingCombo->findText(encoding);
+    if (encIdx >= 0) m_encodingCombo->setCurrentIndex(encIdx);
 }
 
 void SettingsDialog::saveSettings()
@@ -119,16 +141,21 @@ void SettingsDialog::saveSettings()
     settings.setValue("editor/colorScheme", m_colorSchemeCombo->currentIndex());
     settings.setValue("editor/tabWidth", m_tabWidthSpin->value());
     settings.setValue("editor/useTabs", m_useTabsCheck->isChecked());
+    settings.setValue("editor/wordWrap", m_wordWrapCheck->isChecked());
     settings.setValue("editor/autoCompletion", m_autoCompletionCheck->isChecked());
     settings.setValue("editor/completionAcceptKey", m_acceptKeyCombo->currentData().toInt());
+    settings.setValue("editor/defaultEncoding", m_encodingCombo->currentText());
 }
 
 int SettingsDialog::getTabWidth() const { return m_tabWidthSpin->value(); }
 bool SettingsDialog::getUseTabs() const { return m_useTabsCheck->isChecked(); }
 QFont SettingsDialog::getSelectedFont() const { return QFont(m_fontCombo->currentText(), m_fontSizeSpin->value()); }
 int SettingsDialog::getFontSize() const { return m_fontSizeSpin->value(); }
+bool SettingsDialog::isWordWrapEnabled() const { return m_wordWrapCheck->isChecked(); }
 bool SettingsDialog::isAutoCompletionEnabled() const { return m_autoCompletionCheck->isChecked(); }
 int SettingsDialog::getCompletionAcceptKey() const { return m_acceptKeyCombo->currentData().toInt(); }
+int SettingsDialog::getColorScheme() const { return m_colorSchemeCombo->currentIndex(); }
+QString SettingsDialog::getDefaultEncoding() const { return m_encodingCombo->currentText(); }
 
 void SettingsDialog::accept()
 {
