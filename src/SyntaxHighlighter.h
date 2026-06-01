@@ -16,6 +16,7 @@ public:
     ~SyntaxHighlighter();
 
     void setLanguage(const QString &suffix);
+    QString currentLanguage() const { return m_currentLanguage; }
     void setColorScheme(int scheme);
     QStringList getCurrentKeywords() const;
 
