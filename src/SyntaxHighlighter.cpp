@@ -1,5 +1,7 @@
 ﻿#include "SyntaxHighlighter.h"
 #include <QTextDocument>
+#include <QPair>
+#include <algorithm>
 
 SyntaxHighlighter::SyntaxHighlighter(QTextDocument *parent)
     : QSyntaxHighlighter(parent), m_currentLanguage("txt"), m_currentColorScheme(0)
@@ -15,7 +17,8 @@ void SyntaxHighlighter::setColorScheme(int scheme)
     if (m_currentColorScheme != scheme) {
         m_currentColorScheme = scheme;
         setupFormats();
-        rehighlight();
+        // 重新加载当前语言规则，使所有规则中的格式副本使用新颜色
+        setLanguage(m_currentLanguage);  // 内部会调用 rehighlight()
     }
 }
 
@@ -453,51 +456,189 @@ void SyntaxHighlighter::setLanguage(const QString &suffix)
 
 void SyntaxHighlighter::highlightBlock(const QString &text)
 {
+    // 第一步：扫描当前块，标记三类区域：字符串、单行注释、多行注释
+    enum SegmentType { Normal, String, LineComment, MultiLineComment };
+    QVector<QPair<int, SegmentType>> segments; // 每个元素是 (起始位置, 类型)
+
+    int i = 0;
+    int n = text.length();
+    bool inMultiLine = (previousBlockState() == 1); // 上块未结束的多行注释
+
+    if (inMultiLine) {
+        segments.append(qMakePair(0, MultiLineComment));
+    }
+
+    while (i < n) {
+        // 如果当前已经在多行注释中
+        if (!segments.isEmpty() && segments.last().second == MultiLineComment) {
+            // 查找结束标志 */
+            int endPos = text.indexOf("*/", i);
+            if (endPos == -1) {
+                // 注释一直延续到块尾
+                setCurrentBlockState(1);
+                break;
+            } else {
+                // 注释在本块内结束
+                i = endPos + 2;
+                segments.pop_back(); // 结束多行注释
+                inMultiLine = false;
+                continue;
+            }
+        }
+
+        // 普通状态（不是多行注释）
+        QChar ch = text[i];
+        if (ch == '"') {
+            // 字符串开始：正确解析转义字符
+            int start = i;
+            i++; // 跳过开始引号
+            while (i < n) {
+                if (text[i] == '\\') {
+                    // 反斜杠转义：跳过下一个字符（无论是什么）
+                    i += 2;
+                    continue;
+                }
+                if (text[i] == '"') {
+                    // 找到未转义的结束引号
+                    i++; // 包含结束引号
+                    break;
+                }
+                i++;
+            }
+            segments.append(qMakePair(start, String));
+        }
+        else if (ch == '\'') {
+            // 字符常量开始：同样处理转义
+            int start = i;
+            i++; // 跳过开始单引号
+            while (i < n) {
+                if (text[i] == '\\') {
+                    i += 2;
+                    continue;
+                }
+                if (text[i] == '\'') {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            segments.append(qMakePair(start, String));
+        }
+        else if (ch == '/' && i+1 < n && text[i+1] == '/') {
+            // 单行注释：从当前到行尾
+            segments.append(qMakePair(i, LineComment));
+            break; // 后面全是注释，无需继续扫描
+        }
+        else if (ch == '/' && i+1 < n && text[i+1] == '*') {
+            // 多行注释开始
+            segments.append(qMakePair(i, MultiLineComment));
+            inMultiLine = true;
+            i += 2;
+            // 继续循环，下次迭代会进入上面的多行注释处理分支
+            continue;
+        }
+        else {
+            i++;
+        }
+    }
+
+    // 第二步：应用字符串和注释格式（覆盖所有规则）
+    QTextCharFormat normalFormat;
+    setFormat(0, n, normalFormat); // 清除所有格式
+
+    for (const auto &seg : segments) {
+        int start = seg.first;
+        int length = 0;
+        if (seg.second == LineComment) {
+            length = n - start;
+            setFormat(start, length, m_commentFormat);
+        } else if (seg.second == MultiLineComment) {
+            if (seg == segments.first() && previousBlockState() == 1) {
+                // 可能跨块，从块头开始
+                start = 0;
+            }
+            int endPos = text.indexOf("*/", start);
+            if (endPos == -1)
+                length = n - start;
+            else
+                length = endPos - start + 2;
+            setFormat(start, length, m_multiLineCommentFormat);
+        } else if (seg.second == String) {
+            // 字符串 / 字符常量：计算实际长度
+            int endPos = start;
+            if (text[start] == '"') {
+                // 找到匹配的结束引号（已包含在扫描中，这里简单计算）
+                endPos = start;
+                int j = start + 1;
+                while (j < n) {
+                    if (text[j] == '\\') j += 2;
+                    else if (text[j] == '"') { endPos = j; break; }
+                    else j++;
+                }
+                if (endPos == start) endPos = n - 1;
+            } else if (text[start] == '\'') {
+                endPos = start;
+                int j = start + 1;
+                while (j < n) {
+                    if (text[j] == '\\') j += 2;
+                    else if (text[j] == '\'') { endPos = j; break; }
+                    else j++;
+                }
+                if (endPos == start) endPos = n - 1;
+            }
+            length = endPos - start + 1;
+            setFormat(start, length, m_stringFormat);
+        }
+    }
+
+    // 第三步：应用普通规则（关键字、数字、运算符等），但要避开字符串和注释区域
+    auto isInSpecialRegion = [&](int pos) -> bool {
+        for (const auto &seg : segments) {
+            int start = seg.first;
+            int end = start;
+            if (seg.second == LineComment) {
+                end = n;
+            } else if (seg.second == MultiLineComment) {
+                int endPos = text.indexOf("*/", start);
+                if (endPos == -1) end = n;
+                else end = endPos + 2;
+            } else if (seg.second == String) {
+                if (text[start] == '"') {
+                    int j = start + 1;
+                    while (j < n) {
+                        if (text[j] == '\\') j += 2;
+                        else if (text[j] == '"') { end = j + 1; break; }
+                        else j++;
+                    }
+                    if (end == start) end = n;
+                } else if (text[start] == '\'') {
+                    int j = start + 1;
+                    while (j < n) {
+                        if (text[j] == '\\') j += 2;
+                        else if (text[j] == '\'') { end = j + 1; break; }
+                        else j++;
+                    }
+                    if (end == start) end = n;
+                }
+            }
+            if (pos >= start && pos < end) return true;
+        }
+        return false;
+    };
+
     for (const HighlightingRule &rule : m_rules) {
+        // 跳过注释规则（已经单独处理）
+        if (rule.pattern.pattern() == "//[^\n]*") continue;
+        if (rule.pattern.pattern() == "/\\*" || rule.pattern.pattern() == "\\*/") continue;
+
         QRegularExpressionMatchIterator it = rule.pattern.globalMatch(text);
         while (it.hasNext()) {
             QRegularExpressionMatch match = it.next();
-            setFormat(match.capturedStart(), match.capturedLength(), rule.format);
-        }
-    }
-    if (m_currentLanguage == "cpp" || m_currentLanguage == "java" ||
-        m_currentLanguage == "js" || m_currentLanguage == "css" ||
-        m_currentLanguage == "json") {
-        setCurrentBlockState(0);
-        int startIndex = 0;
-        if (previousBlockState() != 1)
-            startIndex = text.indexOf(m_commentStartExpression);
-        while (startIndex >= 0) {
-            QRegularExpressionMatch endMatch = m_commentEndExpression.match(text, startIndex);
-            int endIndex = endMatch.capturedStart();
-            int commentLength;
-            if (endIndex == -1) {
-                setCurrentBlockState(1);
-                commentLength = text.length() - startIndex;
-            } else {
-                commentLength = endIndex - startIndex + endMatch.capturedLength();
+            int start = match.capturedStart();
+            int len = match.capturedLength();
+            if (!isInSpecialRegion(start)) {
+                setFormat(start, len, rule.format);
             }
-            setFormat(startIndex, commentLength, m_multiLineCommentFormat);
-            startIndex = text.indexOf(m_commentStartExpression, startIndex + commentLength);
-        }
-    }
-    if (m_currentLanguage == "py") {
-        setCurrentBlockState(0);
-        int startIndex = 0;
-        if (previousBlockState() != 1)
-            startIndex = text.indexOf(m_tripleQuoteStartExpression);
-        while (startIndex >= 0) {
-            QRegularExpressionMatch endMatch = m_tripleQuoteEndExpression.match(text, startIndex + 3);
-            int endIndex = endMatch.capturedStart();
-            int stringLength;
-            if (endIndex == -1) {
-                setCurrentBlockState(1);
-                stringLength = text.length() - startIndex;
-            } else {
-                stringLength = endIndex - startIndex + endMatch.capturedLength();
-            }
-            setFormat(startIndex, stringLength, m_tripleQuoteFormat);
-            startIndex = text.indexOf(m_tripleQuoteStartExpression, startIndex + stringLength);
         }
     }
 }
