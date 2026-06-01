@@ -21,9 +21,11 @@ public:
     int getFontSize() const;
     int getTabWidth() const;
     bool getUseTabs() const;
-
+    bool isWordWrapEnabled() const;
     bool isAutoCompletionEnabled() const;
     int getCompletionAcceptKey() const;
+    int getColorScheme() const;
+    QString getDefaultEncoding() const;
 
 private slots:
     void accept() override;
@@ -34,8 +36,10 @@ private:
     QComboBox *m_colorSchemeCombo;
     QSpinBox *m_tabWidthSpin;
     QCheckBox *m_useTabsCheck;
+    QCheckBox *m_wordWrapCheck;          // 自动换行
     QCheckBox *m_autoCompletionCheck;
     QComboBox *m_acceptKeyCombo;
+    QComboBox *m_encodingCombo;          // 文件编码
     QPushButton *m_okButton;
     QPushButton *m_cancelButton;
 
