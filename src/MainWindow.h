@@ -29,23 +29,21 @@ private slots:
     bool saveFile();
     bool saveFileAs();
     void about();
+    void showPrivacyPolicy();
     void onEditorModificationChanged(bool modified);
     void showFindReplaceDialog();
     void showSettingsDialog();
-    void showPrivacyPolicy();
-    void reloadSettings();
-    void setFileEncoding(const QString &encoding);
+    void reloadSettings();                     // 完整加载（启动时）
     void updateCursorPosition();
     void onEditorStatusMessage(const QString &msg);
-    void changeColorScheme(int scheme);
     void onTabWidthChanged(int newWidth);
     void onLanguageChanged(const QString &suffix);
+    void showGotoDialog();
 
 private:
     void createMenuBar();
     void createStatusBar();
     bool maybeSave();
-    bool saveFileToPath(const QString &path);
     void setCurrentFile(const QString &filePath);
     QString strippedName(const QString &fullFileName);
     void updateHighlighterForFile(const QString &filePath);
@@ -55,6 +53,8 @@ private:
     void restartApplication(const QString &fileToOpen);
     QString configFilePath() const;
     void ensureConfigDir();
+    void applyDefaultEncoding();
+    void reloadSettingsExceptColorScheme();    // 加载除配色方案外的设置（设置对话框确定后）
 
     Editor *m_editor;
     SyntaxHighlighter *m_highlighter;
@@ -62,7 +62,7 @@ private:
     QString m_currentFilePath;
     QString m_currentEncoding;
     bool m_isUntitled;
-    
+
     static const QString COPYRIGHT_TEXT;
     static const QString VERSION_STRING;
 };
