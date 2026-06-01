@@ -30,6 +30,8 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
+#include <QShortcut>
+#include <QInputDialog>
 
 const QString MainWindow::COPYRIGHT_TEXT = "Copyright (C) 2026 Momster";
 const QString MainWindow::VERSION_STRING = "1.0.0";
@@ -54,7 +56,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_editor, &Editor::cursorPositionChanged, this, &MainWindow::updateCursorPosition);
     connect(m_editor, &Editor::statusMessage, this, &MainWindow::onEditorStatusMessage);
     connect(m_editor, &Editor::tabWidthChanged, this, &MainWindow::onTabWidthChanged);
+    connect(m_editor->document(), &QTextDocument::contentsChanged, this, &MainWindow::updateStatusBar);
     m_editor->installEventFilter(this);
+
+    // Ctrl+H 快速跳转
+    QShortcut *gotoShortcut = new QShortcut(QKeySequence("Ctrl+H"), this);
+    connect(gotoShortcut, &QShortcut::activated, this, &MainWindow::showGotoDialog);
 
     createMenuBar();
     createStatusBar();
@@ -95,29 +102,43 @@ void MainWindow::reloadSettings()
     int colorScheme = settings.value("editor/colorScheme", 0).toInt();
     int tabWidth = settings.value("editor/tabWidth", 4).toInt();
     bool useTabs = settings.value("editor/useTabs", false).toBool();
+    bool wordWrap = settings.value("editor/wordWrap", true).toBool();
+    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
+    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
+    QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
 
     m_editor->setTabWidth(tabWidth);
     m_editor->setUseTabs(useTabs);
+    m_editor->setWordWrapEnabled(wordWrap);
+    m_editor->setAutoCompletionEnabled(autoCompletion);
+    m_editor->setCompletionAcceptKey(acceptKey);
 
     QFont font(fontFamily, fontSize);
     font.setFixedPitch(true);
     m_editor->setFont(font);
     m_editor->setZoomBaseFontSize(fontSize);
 
+    // 应用配色方案（立即生效）
     m_highlighter->setColorScheme(colorScheme);
-    QString savedEnc = settings.value("editor/encoding", "UTF-8").toString();
-    if (savedEnc != m_currentEncoding) {
-        m_currentEncoding = savedEnc;
-        updateStatusBar();
+    
+    // 强制刷新文档和视图
+    m_editor->document()->markContentsDirty(0, m_editor->document()->characterCount());
+    m_editor->viewport()->update();
+
+    if (m_isUntitled) {
+        m_currentEncoding = defaultEnc;
     }
+    updateStatusBar();
 
-    bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
-    int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
-    m_editor->setAutoCompletionEnabled(autoCompletion);
-    m_editor->setCompletionAcceptKey(acceptKey);
+    onLanguageChanged(m_highlighter->currentLanguage());
+}
 
-    // 刷新关键字列表（当前语言）
-    onLanguageChanged(m_highlighter->property("currentLanguage").toString());
+void MainWindow::applyDefaultEncoding()
+{
+    QSettings settings(configFilePath(), QSettings::IniFormat);
+    QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
+    m_currentEncoding = defaultEnc;
+    updateStatusBar();
 }
 
 void MainWindow::createMenuBar()
@@ -155,29 +176,10 @@ void MainWindow::createMenuBar()
     connect(findAction, &QAction::triggered, this, &MainWindow::showFindReplaceDialog);
     editMenu->addAction(findAction);
 
-    QMenu *settingsMenu = menuBar()->addMenu("设置(&S)");
-    QAction *fontAction = new QAction("字体设置(&F)...", this);
-    connect(fontAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
-    settingsMenu->addAction(fontAction);
-
-    QMenu *colorMenu = settingsMenu->addMenu("配色方案(&C)");
-    QAction *schemeStd = new QAction("标准 (VS Code)", this);
-    QAction *schemeWeb = new QAction("Web (GitHub)", this);
-    QAction *schemeVivid = new QAction("鲜艳 (高对比)", this);
-    connect(schemeStd, &QAction::triggered, [this]() { changeColorScheme(0); });
-    connect(schemeWeb, &QAction::triggered, [this]() { changeColorScheme(1); });
-    connect(schemeVivid, &QAction::triggered, [this]() { changeColorScheme(2); });
-    colorMenu->addAction(schemeStd);
-    colorMenu->addAction(schemeWeb);
-    colorMenu->addAction(schemeVivid);
-
-    QMenu *encodingMenu = settingsMenu->addMenu("默认编码(&E)");
-    QStringList encodings = {"UTF-8", "UTF-8-BOM", "GBK"};
-    for (const QString &enc : encodings) {
-        QAction *action = new QAction(enc, this);
-        connect(action, &QAction::triggered, [this, enc]() { setFileEncoding(enc); });
-        encodingMenu->addAction(action);
-    }
+    // 设置：直接是一个菜单项
+    QAction *settingsAction = new QAction("设置(&S)", this);
+    connect(settingsAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
+    menuBar()->addAction(settingsAction);
 
     QMenu *helpMenu = menuBar()->addMenu("帮助(&H)");
     QAction *aboutAction = new QAction("关于(&A)", this);
@@ -200,7 +202,7 @@ void MainWindow::newFile()
         m_editor->clear();
         m_currentFilePath.clear();
         m_isUntitled = true;
-        m_currentEncoding = "UTF-8";
+        applyDefaultEncoding();
         setCurrentFile("");
         m_editor->document()->setModified(false);
         updateHighlighterForFile("");
@@ -245,7 +247,7 @@ void MainWindow::openFileFromPath(const QString &filePath)
             encoding = "UTF-8";
         } else {
             text = QString::fromLocal8Bit(data);
-            encoding = "GBK";
+            encoding = "ANSI";
         }
     }
 
@@ -278,6 +280,8 @@ void MainWindow::loadFileWithEncoding(const QString &filePath, const QString &en
         text = QString::fromUtf8(data);
     } else if (encoding == "GBK") {
         text = QString::fromLocal8Bit(data);
+    } else if (encoding == "ANSI") {
+        text = QString::fromLocal8Bit(data);
     } else {
         text = QString::fromUtf8(data);
     }
@@ -308,6 +312,8 @@ bool MainWindow::saveFileWithEncoding(const QString &path, const QString &encodi
         data.prepend("\xEF\xBB\xBF");
     } else if (encoding == "GBK") {
         data = text.toLocal8Bit();
+    } else if (encoding == "ANSI") {
+        data = text.toLocal8Bit();
     } else {
         data = text.toUtf8();
     }
@@ -324,15 +330,6 @@ bool MainWindow::saveFileWithEncoding(const QString &path, const QString &encodi
     updateStatusBar();
     statusBar()->showMessage("已保存: " + path + " [" + encoding + "]", 3000);
     return true;
-}
-
-void MainWindow::setFileEncoding(const QString &encoding)
-{
-    m_currentEncoding = encoding;
-    QSettings settings(configFilePath(), QSettings::IniFormat);
-    settings.setValue("editor/encoding", encoding);
-    updateStatusBar();
-    statusBar()->showMessage("当前文件编码已改为: " + encoding + "，保存时将使用此编码。", 3000);
 }
 
 bool MainWindow::saveFile()
@@ -430,11 +427,13 @@ void MainWindow::about()
         "<li>根据文件后缀自动识别高亮规则</li>"
         "<li>行号显示</li>"
         "<li>查找/替换（Ctrl+F）</li>"
-        "<li>文件编码切换（UTF-8/GBK等）</li>"
+        "<li>文件编码切换（UTF-8/GBK/ANSI等）</li>"
         "<li>自定义字体</li>"
         "<li>Ctrl+滚轮缩放</li>"
         "<li>Tab 行为配置（插入制表符或空格）</li>"
+        "<li>自动换行（可开关）</li>"
         "<li>智慧联想：内联建议，自动补全关键字和文档内标识符，可自定义开关及采纳键</li>"
+        "<li>快速跳转：Ctrl+H，输入“行:列”或仅行号</li>"
         "</ul>"
         "<p>使用 Qt 6.11.0 + C++17 构建</p>";
 
@@ -556,6 +555,7 @@ void MainWindow::onLanguageChanged(const QString &suffix)
     Q_UNUSED(suffix);
     QStringList keywords = m_highlighter->getCurrentKeywords();
     m_editor->setKeywordList(keywords);
+    m_editor->setCurrentLanguage(suffix);
 }
 
 void MainWindow::updateCursorPosition()
@@ -563,18 +563,107 @@ void MainWindow::updateCursorPosition()
     updateStatusBar();
 }
 
+static QString formatFileSize(qint64 size)
+{
+    if (size < 1024)
+        return QString::number(size) + " B";
+    else if (size < 1024 * 1024)
+        return QString::number(size / 1024.0, 'f', 2) + " KB";
+    else
+        return QString::number(size / (1024.0 * 1024.0), 'f', 2) + " MB";
+}
+
 void MainWindow::updateStatusBar()
 {
-    int line = m_editor->textCursor().blockNumber() + 1;
-    int col = m_editor->textCursor().columnNumber() + 1;
+    QTextDocument *doc = m_editor->document();
+    if (!doc) return;
+
+    QString plainText = m_editor->toPlainText();
+    int totalChars = plainText.length();
+    int totalLines = doc->blockCount();
+
+    qint64 fileSize = 0;
+    if (!m_isUntitled && !m_currentFilePath.isEmpty()) {
+        QFileInfo fi(m_currentFilePath);
+        if (fi.exists())
+            fileSize = fi.size();
+    }
+    if (fileSize == 0) {
+        fileSize = plainText.toUtf8().size();
+    }
+
+    QTextCursor cursor = m_editor->textCursor();
+    int selectedChars = cursor.selectedText().length();
+    QString wordDisplay;
+    if (selectedChars > 0)
+        wordDisplay = QString("%1 / %2 字").arg(selectedChars).arg(totalChars);
+    else
+        wordDisplay = QString("%1 字").arg(totalChars);
+
     int tabWidth = m_editor->tabWidth();
-    QString tabMode = m_editor->useTabs() ? "制表符" : QString("空格×%1").arg(tabWidth);
-    statusBar()->showMessage(QString("编码: %1 | Tab: %2 | 行: %3 | 列: %4 | 模式: %5")
+    QString tabMode = m_editor->useTabs() ? "Tab:T" : QString("Tab:%1S").arg(tabWidth);
+
+    int line = cursor.blockNumber() + 1;
+    int col = cursor.columnNumber() + 1;
+
+    QString statusText = QString("编码: %1 | 大小: %2 | %3 | %4 行 | %5 | %6:%7")
         .arg(m_currentEncoding)
-        .arg(tabWidth)
+        .arg(formatFileSize(fileSize))
+        .arg(wordDisplay)
+        .arg(totalLines)
+        .arg(tabMode)
         .arg(line)
-        .arg(col)
-        .arg(tabMode));
+        .arg(col);
+
+    statusBar()->showMessage(statusText);
+}
+
+void MainWindow::showGotoDialog()
+{
+    bool ok;
+    QString text = QInputDialog::getText(this, "跳转到位置",
+                                         "输入行号 或 行:列 (例如 17 或 17:5):",
+                                         QLineEdit::Normal, "", &ok);
+    if (!ok || text.isEmpty())
+        return;
+
+    int line = -1, column = -1;
+    if (text.contains(':')) {
+        QStringList parts = text.split(':');
+        if (parts.size() == 2) {
+            line = parts[0].toInt(&ok);
+            if (ok) column = parts[1].toInt(&ok);
+        }
+    } else {
+        line = text.toInt(&ok);
+        if (ok) column = 1; // 默认行首
+    }
+
+    if (!ok || line < 1) {
+        statusBar()->showMessage("无效的行号或格式", 2000);
+        return;
+    }
+
+    QTextDocument *doc = m_editor->document();
+    int totalLines = doc->blockCount();
+    if (line > totalLines) {
+        statusBar()->showMessage(QString("行号超出范围 (最多 %1 行)").arg(totalLines), 2000);
+        return;
+    }
+
+    QTextCursor cursor(doc);
+    cursor.movePosition(QTextCursor::Start);
+    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::MoveAnchor, line - 1);
+    if (column > 1) {
+        cursor.movePosition(QTextCursor::StartOfLine);
+        cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, column - 1);
+    } else {
+        cursor.movePosition(QTextCursor::StartOfLine);
+    }
+
+    m_editor->setTextCursor(cursor);
+    m_editor->ensureCursorVisible();
+    statusBar()->showMessage(QString("跳转到 %1:%2").arg(line).arg(column > 0 ? column : 1), 1500);
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
@@ -604,48 +693,17 @@ void MainWindow::showSettingsDialog()
 {
     SettingsDialog dlg(this);
     if (dlg.exec() == QDialog::Accepted) {
-        reloadSettings();
+        reloadSettings();           // 重新加载所有设置，包括配色方案
+        if (m_isUntitled) {
+            applyDefaultEncoding();
+        }
+        updateStatusBar();
     }
 }
 
 void MainWindow::onEditorStatusMessage(const QString &msg)
 {
     statusBar()->showMessage(msg, 1500);
-}
-
-void MainWindow::changeColorScheme(int scheme)
-{
-    QSettings settings(configFilePath(), QSettings::IniFormat);
-    int oldScheme = settings.value("editor/colorScheme", 0).toInt();
-    settings.setValue("editor/colorScheme", scheme);
-
-    bool isModified = m_editor->document()->isModified();
-    if (!isModified) {
-        restartApplication(m_currentFilePath);
-        return;
-    }
-
-    QMessageBox::StandardButton reply = QMessageBox::question(
-        this,
-        "重启以应用配色方案",
-        "配色方案已更改，需要重启程序才能完全应用。\n"
-        "当前文档未保存，是否保存并重启？",
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
-    );
-
-    if (reply == QMessageBox::Save) {
-        if (saveFile()) {
-            restartApplication(m_currentFilePath);
-        } else {
-            settings.setValue("editor/colorScheme", oldScheme);
-            statusBar()->showMessage("保存失败，配色方案未更改", 2000);
-        }
-    } else if (reply == QMessageBox::Discard) {
-        restartApplication(m_currentFilePath);
-    } else {
-        settings.setValue("editor/colorScheme", oldScheme);
-        statusBar()->showMessage("配色方案未更改", 2000);
-    }
 }
 
 void MainWindow::onTabWidthChanged(int newWidth)
