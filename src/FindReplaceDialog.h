@@ -1,4 +1,4 @@
-﻿#ifndef FINDREPLACEDIALOG_H
+#ifndef FINDREPLACEDIALOG_H
 #define FINDREPLACEDIALOG_H
 
 #include <QDialog>
@@ -17,6 +17,7 @@ public:
 
 private slots:
     void findNext();
+    void findPrevious();
     void replace();
     void replaceAll();
 
@@ -25,9 +26,12 @@ private:
     QLineEdit *m_findEdit;
     QLineEdit *m_replaceEdit;
     QCheckBox *m_caseSensitive;
-    QPushButton *m_findButton;
+    QPushButton *m_nextButton;
+    QPushButton *m_prevButton;
     QPushButton *m_replaceButton;
     QPushButton *m_replaceAllButton;
+
+    bool findText(bool forward);  // 核心查找函数，forward=true为向下，false为向上，返回是否找到
 };
 
 #endif // FINDREPLACEDIALOG_H
