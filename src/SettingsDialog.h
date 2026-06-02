@@ -25,6 +25,7 @@ public:
     bool isAutoCompletionEnabled() const;
     int getCompletionAcceptKey() const;
     int getColorScheme() const;
+    int getLargeNumberFormat() const;  // 0:精确,1:千位(k),2:万位(w)
     QString getDefaultEncoding() const;
 
 private slots:
@@ -40,6 +41,7 @@ private:
     QCheckBox *m_autoCompletionCheck;
     QComboBox *m_acceptKeyCombo;
     QComboBox *m_encodingCombo;          // 文件编码
+    QComboBox *m_numberFormatCombo;
     QPushButton *m_okButton;
     QPushButton *m_cancelButton;
 
