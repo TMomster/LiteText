@@ -1,4 +1,4 @@
-﻿#include <QApplication>
+#include <QApplication>
 #include <QIcon>
 #include <QCommandLineParser>
 #include <QCommandLineOption>
