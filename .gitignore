@@ -6,3 +6,6 @@ bak/
 
 # caches
 cache/
+
+# release
+release/
