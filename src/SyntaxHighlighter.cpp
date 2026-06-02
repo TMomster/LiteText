@@ -420,6 +420,11 @@ void SyntaxHighlighter::setupPlainRules()
 {
     clearRules();
     m_currentKeywords.clear();
+    // 禁用所有特殊区域高亮（注释、字符串等）
+    m_commentStartExpression = QRegularExpression();
+    m_commentEndExpression = QRegularExpression();
+    m_tripleQuoteStartExpression = QRegularExpression();
+    m_tripleQuoteEndExpression = QRegularExpression();
 }
 
 void SyntaxHighlighter::setLanguage(const QString &suffix)
@@ -456,6 +461,12 @@ void SyntaxHighlighter::setLanguage(const QString &suffix)
 
 void SyntaxHighlighter::highlightBlock(const QString &text)
 {
+    // 纯文本模式：规则为空则完全跳过高亮处理
+    if (m_rules.isEmpty()) {
+        setFormat(0, text.length(), QTextCharFormat());
+        setCurrentBlockState(0);
+        return;
+    }
     // 第一步：扫描当前块，标记三类区域：字符串、单行注释、多行注释
     enum SegmentType { Normal, String, LineComment, MultiLineComment };
     QVector<QPair<int, SegmentType>> segments; // 每个元素是 (起始位置, 类型)
