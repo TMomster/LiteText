@@ -55,12 +55,14 @@ private:
     void ensureConfigDir();
     void applyDefaultEncoding();
     void reloadSettingsExceptColorScheme();    // 加载除配色方案外的设置（设置对话框确定后）
+    QString formatLargeNumber(int value, int format) const;
 
     Editor *m_editor;
     SyntaxHighlighter *m_highlighter;
     FindReplaceDialog *m_findDialog;
     QString m_currentFilePath;
     QString m_currentEncoding;
+    int m_largeNumberFormat; // 0:精确,1:千位(k),2:万位(w)
     bool m_isUntitled;
 
     static const QString COPYRIGHT_TEXT;
