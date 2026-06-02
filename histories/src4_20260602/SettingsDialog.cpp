@@ -1,4 +1,4 @@
-﻿#include "SettingsDialog.h"
+#include "SettingsDialog.h"
 #include <QComboBox>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -10,14 +10,27 @@
 #include <QSettings>
 #include <QDir>
 #include <QGroupBox>
+#include <QScrollArea>
+#include <QWidget>
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
 {
     setWindowTitle("设置");
-    setMinimumSize(480, 500);
+    setMinimumSize(600, 500);   // 增加最小宽度，避免水平滚动
+    resize(640, 600);           // 默认宽度增加
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
+    // 创建滚动区域
+    QScrollArea *scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    // 禁止水平滚动
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // 创建内部容器
+    QWidget *scrollWidget = new QWidget(scrollArea);
+    QVBoxLayout *layout = new QVBoxLayout(scrollWidget);
+    layout->setContentsMargins(0, 0, 0, 0);  // 移除边距，让内容更紧凑
 
     // 字体
     QGroupBox *fontGroup = new QGroupBox("字体");
@@ -51,14 +64,23 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     tabLayout->addWidget(m_useTabsCheck);
     layout->addWidget(tabGroup);
 
-    // 配色方案
-    QGroupBox *schemeGroup = new QGroupBox("配色方案");
+    // 配色方案 (语法高亮)
+    QGroupBox *schemeGroup = new QGroupBox("配色方案 (语法高亮)");
     QHBoxLayout *schemeLayout = new QHBoxLayout(schemeGroup);
     schemeLayout->addWidget(new QLabel("配色:"));
     m_colorSchemeCombo = new QComboBox;
     m_colorSchemeCombo->addItems({"标准", "Web", "鲜艳"});
     schemeLayout->addWidget(m_colorSchemeCombo);
     layout->addWidget(schemeGroup);
+
+    // 编辑器主题 (背景/前景)
+    QGroupBox *themeGroup = new QGroupBox("编辑器主题");
+    QHBoxLayout *themeLayout = new QHBoxLayout(themeGroup);
+    themeLayout->addWidget(new QLabel("主题:"));
+    m_themeCombo = new QComboBox;
+    m_themeCombo->addItems({"深色", "浅色", "海洋", "跟随系统"});
+    themeLayout->addWidget(m_themeCombo);
+    layout->addWidget(themeGroup);
 
     // 智慧联想
     QGroupBox *completionGroup = new QGroupBox("智慧联想");
@@ -94,13 +116,23 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     numberLayout->addWidget(m_numberFormatCombo);
     layout->addWidget(numberGroup);
 
-    // 按钮
+    // 添加一个弹性空间，使内容顶部对齐
+    layout->addStretch();
+
+    // 将内部容器设置到滚动区域
+    scrollArea->setWidget(scrollWidget);
+
+    // 创建按钮布局（放在滚动区域外部，底部固定）
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     m_okButton = new QPushButton("确定");
     m_cancelButton = new QPushButton("取消");
     buttonLayout->addWidget(m_okButton);
     buttonLayout->addWidget(m_cancelButton);
-    layout->addLayout(buttonLayout);
+
+    // 主布局：滚动区域 + 按钮
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->addWidget(scrollArea);
+    mainLayout->addLayout(buttonLayout);
 
     connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
@@ -127,6 +159,7 @@ void SettingsDialog::loadSettings()
     bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
     int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
     QString encoding = settings.value("editor/defaultEncoding", "UTF-8").toString();
+    int theme = settings.value("editor/theme", 0).toInt();
 
     int idx = m_fontCombo->findText(fontFamily);
     if (idx >= 0) m_fontCombo->setCurrentIndex(idx);
@@ -141,8 +174,13 @@ void SettingsDialog::loadSettings()
     int encIdx = m_encodingCombo->findText(encoding);
     if (encIdx >= 0) m_encodingCombo->setCurrentIndex(encIdx);
     
-    int numberFormat = settings.value("editor/largeNumberFormat", 2).toInt(); // 默认万位
+    int numberFormat = settings.value("editor/largeNumberFormat", 2).toInt();
     m_numberFormatCombo->setCurrentIndex(numberFormat);
+    
+    if (theme >=0 && theme < 4)
+        m_themeCombo->setCurrentIndex(theme);
+    else
+        m_themeCombo->setCurrentIndex(0);
 }
 
 void SettingsDialog::saveSettings()
@@ -158,6 +196,7 @@ void SettingsDialog::saveSettings()
     settings.setValue("editor/completionAcceptKey", m_acceptKeyCombo->currentData().toInt());
     settings.setValue("editor/defaultEncoding", m_encodingCombo->currentText());
     settings.setValue("editor/largeNumberFormat", m_numberFormatCombo->currentIndex());
+    settings.setValue("editor/theme", m_themeCombo->currentIndex());
 }
 
 int SettingsDialog::getTabWidth() const { return m_tabWidthSpin->value(); }
@@ -170,6 +209,7 @@ int SettingsDialog::getCompletionAcceptKey() const { return m_acceptKeyCombo->cu
 int SettingsDialog::getColorScheme() const { return m_colorSchemeCombo->currentIndex(); }
 QString SettingsDialog::getDefaultEncoding() const { return m_encodingCombo->currentText(); }
 int SettingsDialog::getLargeNumberFormat() const { return m_numberFormatCombo->currentIndex(); }
+int SettingsDialog::getTheme() const { return m_themeCombo->currentIndex(); }
 
 void SettingsDialog::accept()
 {
