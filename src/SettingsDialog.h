@@ -1,4 +1,4 @@
-﻿#ifndef SETTINGSDIALOG_H
+#ifndef SETTINGSDIALOG_H
 #define SETTINGSDIALOG_H
 
 #include <QDialog>
@@ -27,6 +27,7 @@ public:
     int getColorScheme() const;
     int getLargeNumberFormat() const;  // 0:精确,1:千位(k),2:万位(w)
     QString getDefaultEncoding() const;
+    int getTheme() const;               // 0:深色,1:浅色,2:海洋,3:跟随系统
 
 private slots:
     void accept() override;
@@ -42,6 +43,7 @@ private:
     QComboBox *m_acceptKeyCombo;
     QComboBox *m_encodingCombo;          // 文件编码
     QComboBox *m_numberFormatCombo;
+    QComboBox *m_themeCombo;             // 主题选择
     QPushButton *m_okButton;
     QPushButton *m_cancelButton;
 
