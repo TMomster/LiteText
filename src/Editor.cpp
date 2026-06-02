@@ -1,4 +1,4 @@
-﻿#include "Editor.h"
+#include "Editor.h"
 #include <QKeyEvent>
 #include <QFont>
 #include <QPainter>
@@ -39,8 +39,16 @@ Editor::Editor(QWidget *parent)
 
     connect(document(), &QTextDocument::contentsChanged, this, &Editor::onDocumentContentsChanged);
 
-    // 初始化当前行高亮
-    updateCurrentLineHighlight();
+    // 默认深色主题
+    EditorThemeColors defaultColors;
+    defaultColors.base = QColor(30, 30, 30);
+    defaultColors.text = QColor(220, 220, 220);
+    defaultColors.highlight = QColor(75, 110, 175);
+    defaultColors.highlightedText = Qt::white;
+    defaultColors.lineHighlight = QColor(45, 45, 60);
+    defaultColors.sidebarBg = QColor(40, 40, 40);
+    defaultColors.sidebarFg = Qt::white;
+    setThemeColors(defaultColors);
 }
 
 Editor::~Editor() {}
@@ -206,7 +214,7 @@ void Editor::onCursorPositionChanged()
 {
     clearSuggestion();
     buildSuggestion();
-    updateCurrentLineHighlight();   // 光标移动时更新当前行高亮
+    updateCurrentLineHighlight();
 }
 
 void Editor::clearSuggestion()
@@ -327,8 +335,7 @@ void Editor::buildSuggestion() {
     int pos = cursor.position();
     QTextDocument *doc = document();
 
-    // 检查光标后是否有非空白字符（单词内部禁止联想）
-    if (pos < doc->characterCount()) {   // 未到文档结尾
+    if (pos < doc->characterCount()) {
         QChar nextChar = doc->characterAt(pos);
         if (!nextChar.isNull() && !nextChar.isSpace()) {
             clearSuggestion();
@@ -366,14 +373,12 @@ void Editor::acceptSuggestion()
     viewport()->update();
 }
 
-// 当前行高亮实现
 void Editor::updateCurrentLineHighlight()
 {
     QList<QTextEdit::ExtraSelection> extraSelections;
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
-        QColor lineColor = QColor(45, 45, 60); // 行高亮颜色
-        selection.format.setBackground(lineColor);
+        selection.format.setBackground(m_currentLineHighlightColor);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
         selection.cursor = textCursor();
         selection.cursor.clearSelection();
@@ -411,14 +416,12 @@ void Editor::paintEvent(QPaintEvent *event)
 
 void Editor::keyPressEvent(QKeyEvent *event)
 {
-    // Ctrl+/ 切换行注释
     if ((event->modifiers() & Qt::ControlModifier) && event->key() == Qt::Key_Slash) {
         toggleCommentSelection();
         event->accept();
         return;
     }
 
-    // Control+Up/Down 切换候选
     if (event->modifiers() == Qt::ControlModifier) {
         if (event->key() == Qt::Key_Down) {
             selectNextCandidate();
@@ -431,7 +434,6 @@ void Editor::keyPressEvent(QKeyEvent *event)
         }
     }
 
-    // 采纳建议
     if (m_autoCompletionEnabled && !m_pendingCompletion.isEmpty() && event->key() == m_completionAcceptKey) {
         acceptSuggestion();
         event->accept();
@@ -669,7 +671,6 @@ void Editor::duplicateLine()
     emit statusMessage("已复制行");
 }
 
-// ========== 注释功能 ==========
 void Editor::setCurrentLanguage(const QString &lang)
 {
     m_currentLanguage = lang;
@@ -730,7 +731,6 @@ void Editor::toggleCommentSelection()
     cursor.endEditBlock();
     setTextCursor(cursor);
 }
-// ================================
 
 void Editor::indentSelection()
 {
@@ -815,20 +815,51 @@ void Editor::unindentSelection()
     setTextCursor(newCursor);
 }
 
+// ========== 主题设置 ==========
+void Editor::setThemeColors(const EditorThemeColors &colors)
+{
+    m_themeColors = colors;
+    m_currentLineHighlightColor = colors.lineHighlight;
+
+    QPalette pal = palette();
+    pal.setColor(QPalette::Base, colors.base);
+    pal.setColor(QPalette::Text, colors.text);
+    pal.setColor(QPalette::Highlight, colors.highlight);
+    pal.setColor(QPalette::HighlightedText, colors.highlightedText);
+    setPalette(pal);
+
+    if (m_sidebar) {
+        m_sidebar->setColors(colors.sidebarBg, colors.sidebarFg);
+        m_sidebar->update();
+    }
+
+    updateCurrentLineHighlight();
+    viewport()->update();
+}
+
 // ========== EditorSidebar 实现 ==========
-EditorSidebar::EditorSidebar(Editor *editor) : QWidget(editor), m_editor(editor) {}
+EditorSidebar::EditorSidebar(Editor *editor) : QWidget(editor), m_editor(editor)
+{
+    m_bgColor = QColor(40, 40, 40);
+    m_fgColor = Qt::white;
+}
 QSize EditorSidebar::sizeHint() const
 {
     int digits = QString::number(m_editor->blockCount()).length();
     int space = 8 + m_editor->fontMetrics().horizontalAdvance(QLatin1Char('9')) * (digits + 1);
     return QSize(space, 0);
 }
+void EditorSidebar::setColors(const QColor &bg, const QColor &fg)
+{
+    m_bgColor = bg;
+    m_fgColor = fg;
+}
 void EditorSidebar::paintEvent(QPaintEvent *event)
 {
     QPainter painter(this);
-    painter.fillRect(event->rect(), QColor(40,40,40));
+    painter.fillRect(event->rect(), m_bgColor);
     painter.setFont(m_editor->font());
-    painter.setPen(Qt::white);
+    painter.setPen(m_fgColor);
     QTextBlock block = m_editor->firstVisibleBlockPublic();
     int blockNumber = block.blockNumber();
     qreal top = m_editor->blockBoundingGeometryPublic(block).translated(m_editor->contentOffsetPublic()).top();
