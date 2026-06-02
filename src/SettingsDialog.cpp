@@ -84,6 +84,15 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     m_encodingCombo->addItems({"UTF-8", "UTF-8-BOM", "GBK", "ANSI"});
     encodingLayout->addWidget(m_encodingCombo);
     layout->addWidget(encodingGroup);
+    
+    // 大数统计方式
+    QGroupBox *numberGroup = new QGroupBox("大数统计方式");
+    QHBoxLayout *numberLayout = new QHBoxLayout(numberGroup);
+    numberLayout->addWidget(new QLabel("字数显示:"));
+    m_numberFormatCombo = new QComboBox;
+    m_numberFormatCombo->addItems({"精确 (个位)", "千位 (k)", "万位 (w)"});
+    numberLayout->addWidget(m_numberFormatCombo);
+    layout->addWidget(numberGroup);
 
     // 按钮
     QHBoxLayout *buttonLayout = new QHBoxLayout;
@@ -131,6 +140,9 @@ void SettingsDialog::loadSettings()
     if (keyIdx >= 0) m_acceptKeyCombo->setCurrentIndex(keyIdx);
     int encIdx = m_encodingCombo->findText(encoding);
     if (encIdx >= 0) m_encodingCombo->setCurrentIndex(encIdx);
+    
+    int numberFormat = settings.value("editor/largeNumberFormat", 2).toInt(); // 默认万位
+    m_numberFormatCombo->setCurrentIndex(numberFormat);
 }
 
 void SettingsDialog::saveSettings()
@@ -145,6 +157,7 @@ void SettingsDialog::saveSettings()
     settings.setValue("editor/autoCompletion", m_autoCompletionCheck->isChecked());
     settings.setValue("editor/completionAcceptKey", m_acceptKeyCombo->currentData().toInt());
     settings.setValue("editor/defaultEncoding", m_encodingCombo->currentText());
+    settings.setValue("editor/largeNumberFormat", m_numberFormatCombo->currentIndex());
 }
 
 int SettingsDialog::getTabWidth() const { return m_tabWidthSpin->value(); }
@@ -156,6 +169,7 @@ bool SettingsDialog::isAutoCompletionEnabled() const { return m_autoCompletionCh
 int SettingsDialog::getCompletionAcceptKey() const { return m_acceptKeyCombo->currentData().toInt(); }
 int SettingsDialog::getColorScheme() const { return m_colorSchemeCombo->currentIndex(); }
 QString SettingsDialog::getDefaultEncoding() const { return m_encodingCombo->currentText(); }
+int SettingsDialog::getLargeNumberFormat() const { return m_numberFormatCombo->currentIndex(); }
 
 void SettingsDialog::accept()
 {
