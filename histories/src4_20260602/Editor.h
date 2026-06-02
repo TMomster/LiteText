@@ -13,6 +13,18 @@
 class QWidget;
 class EditorSidebar;
 
+// 主题颜色结构体
+struct EditorThemeColors
+{
+    QColor base;        // 背景色
+    QColor text;        // 文字色
+    QColor highlight;   // 选中背景
+    QColor highlightedText; // 选中文字
+    QColor lineHighlight;   // 当前行高亮
+    QColor sidebarBg;       // 行号区域背景
+    QColor sidebarFg;       // 行号文字
+};
+
 class Editor : public QPlainTextEdit
 {
     Q_OBJECT
@@ -39,6 +51,10 @@ public:
     void setWordWrapEnabled(bool enabled);
     bool wordWrapEnabled() const { return m_wordWrapEnabled; }
 
+    // 主题设置
+    void setThemeColors(const EditorThemeColors &colors);
+    void updateSidebarGeometry(); // 需要公开让MainWindow调用更新侧边栏
+
     // 公共包装器（行号侧边栏需要）
     QTextBlock firstVisibleBlockPublic() const;
     QRectF blockBoundingGeometryPublic(const QTextBlock &block) const;
@@ -58,7 +74,6 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private slots:
-    void updateSidebarGeometry();
     void updateSidebar();
     void onDocumentContentsChanged();
     void onCursorPositionChanged();
@@ -81,12 +96,16 @@ private:
     QString m_currentLanguage;
     QString m_commentPrefix;
 
-    // ========== 智慧联想增强 ==========
+    // 智慧联想增强
     QHash<QString, int> m_identifierFrequency;
     QHash<int, QSet<QString>> m_blockWords;
     QStringList m_currentCandidates;
     int m_currentCandidateIndex;
     bool m_needsFullCollect;
+
+    // 主题颜色相关
+    QColor m_currentLineHighlightColor;   // 当前行高亮颜色
+    EditorThemeColors m_themeColors;      // 当前主题颜色
 
     void updateIdentifierFrequency(const QString &word);
     void rebuildCandidates(const QString &prefix);
@@ -96,7 +115,6 @@ private:
     void updateIdentifiersForBlock(const QTextBlock &block, bool removeOld = true);
     void clearBlockWordsForBlock(int blockNumber);
     void collectIdentifiersFromDocument();
-    // =================================
 
     // 当前行高亮
     void updateCurrentLineHighlight();
@@ -123,12 +141,15 @@ class EditorSidebar : public QWidget
 public:
     EditorSidebar(Editor *editor);
     QSize sizeHint() const override;
+    void setColors(const QColor &bg, const QColor &fg); // 设置行号区域颜色
 
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
     Editor *m_editor;
+    QColor m_bgColor;
+    QColor m_fgColor;
 };
 
 #endif // EDITOR_H
