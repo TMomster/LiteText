@@ -22,12 +22,12 @@
 
 ## 构建步骤
 
-`ash
+```bash
 mkdir build
 cd build
 cmake .. -G "MinGW Makefiles"
 cmake --build . --config Release
-`
+```
 
 ## 许可证
 
