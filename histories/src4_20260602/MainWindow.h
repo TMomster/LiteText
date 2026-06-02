@@ -1,10 +1,10 @@
-﻿#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
 #include <QString>
+#include "Editor.h"
 
-class Editor;
 class SyntaxHighlighter;
 class FindReplaceDialog;
 class SettingsDialog;
@@ -33,12 +33,13 @@ private slots:
     void onEditorModificationChanged(bool modified);
     void showFindReplaceDialog();
     void showSettingsDialog();
-    void reloadSettings();                     // 完整加载（启动时）
+    void reloadSettings();
     void updateCursorPosition();
     void onEditorStatusMessage(const QString &msg);
     void onTabWidthChanged(int newWidth);
     void onLanguageChanged(const QString &suffix);
     void showGotoDialog();
+    void onSystemThemeChanged();
 
 private:
     void createMenuBar();
@@ -54,7 +55,8 @@ private:
     QString configFilePath() const;
     void ensureConfigDir();
     void applyDefaultEncoding();
-    void reloadSettingsExceptColorScheme();    // 加载除配色方案外的设置（设置对话框确定后）
+    void applyTheme();
+    EditorThemeColors getThemeColorsForIndex(int themeIndex) const;
     QString formatLargeNumber(int value, int format) const;
 
     Editor *m_editor;
@@ -62,8 +64,10 @@ private:
     FindReplaceDialog *m_findDialog;
     QString m_currentFilePath;
     QString m_currentEncoding;
-    int m_largeNumberFormat; // 0:精确,1:千位(k),2:万位(w)
+    int m_largeNumberFormat;
     bool m_isUntitled;
+    int m_currentTheme;
+    bool m_isFollowingSystem;
 
     static const QString COPYRIGHT_TEXT;
     static const QString VERSION_STRING;
