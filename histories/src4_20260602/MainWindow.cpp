@@ -32,6 +32,8 @@
 #include <QStandardPaths>
 #include <QShortcut>
 #include <QInputDialog>
+#include <QGuiApplication>
+#include <QStyleHints>
 
 const QString MainWindow::COPYRIGHT_TEXT = "Copyright (C) 2026 Momster";
 const QString MainWindow::VERSION_STRING = "1.0.0";
@@ -40,6 +42,8 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_isUntitled(true)
     , m_currentEncoding("UTF-8")
+    , m_currentTheme(0)
+    , m_isFollowingSystem(false)
 {
     ensureConfigDir();
 
@@ -66,16 +70,12 @@ MainWindow::MainWindow(QWidget *parent)
     createMenuBar();
     createStatusBar();
 
-    QPalette pal = m_editor->palette();
-    pal.setColor(QPalette::Base, QColor(30, 30, 30));
-    pal.setColor(QPalette::Text, QColor(220, 220, 220));
-    pal.setColor(QPalette::Highlight, QColor(75, 110, 175));
-    pal.setColor(QPalette::HighlightedText, Qt::white);
-    m_editor->setPalette(pal);
-
     reloadSettings();
     updateStatusBar();
     statusBar()->showMessage("就绪", 2000);
+
+    // 监听系统主题变化
+    connect(qGuiApp->styleHints(), &QStyleHints::colorSchemeChanged, this, &MainWindow::onSystemThemeChanged);
 }
 
 MainWindow::~MainWindow() {}
@@ -107,6 +107,7 @@ void MainWindow::reloadSettings()
     int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
     QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
     m_largeNumberFormat = settings.value("editor/largeNumberFormat", 2).toInt();
+    m_currentTheme = settings.value("editor/theme", 0).toInt();
 
     m_editor->setTabWidth(tabWidth);
     m_editor->setUseTabs(useTabs);
@@ -119,12 +120,13 @@ void MainWindow::reloadSettings()
     m_editor->setFont(font);
     m_editor->setZoomBaseFontSize(fontSize);
 
-    // 应用配色方案（立即生效）
+    // 应用配色方案（语法高亮）
     m_highlighter->setColorScheme(colorScheme);
-    
-    // 强制刷新文档和视图
     m_editor->document()->markContentsDirty(0, m_editor->document()->characterCount());
     m_editor->viewport()->update();
+
+    // 应用编辑器主题
+    applyTheme();
 
     if (m_isUntitled) {
         m_currentEncoding = defaultEnc;
@@ -134,28 +136,71 @@ void MainWindow::reloadSettings()
     onLanguageChanged(m_highlighter->currentLanguage());
 }
 
-QString MainWindow::formatLargeNumber(int value, int format) const
+void MainWindow::applyTheme()
 {
-    if (format == 0) return QString::number(value); // 精确
-    if (format == 1) { // 千位
-        double v = value / 1000.0;
-        if (value < 1000) return QString::number(value);
-        return QString::number(v, 'f', 1) + "k";
+    int effectiveTheme = m_currentTheme;
+    if (m_currentTheme == 3) { // 跟随系统
+        m_isFollowingSystem = true;
+        Qt::ColorScheme scheme = qGuiApp->styleHints()->colorScheme();
+        effectiveTheme = (scheme == Qt::ColorScheme::Dark) ? 0 : 1;
+    } else {
+        m_isFollowingSystem = false;
+        effectiveTheme = m_currentTheme;
     }
-    if (format == 2) { // 万位
-        double v = value / 10000.0;
-        if (value < 10000) return QString::number(value);
-        return QString::number(v, 'f', 1) + "w";
-    }
-    return QString::number(value);
+    EditorThemeColors colors = getThemeColorsForIndex(effectiveTheme);
+    m_editor->setThemeColors(colors);
 }
 
-void MainWindow::applyDefaultEncoding()
+EditorThemeColors MainWindow::getThemeColorsForIndex(int index) const
 {
-    QSettings settings(configFilePath(), QSettings::IniFormat);
-    QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
-    m_currentEncoding = defaultEnc;
-    updateStatusBar();
+    EditorThemeColors colors;
+    switch (index) {
+    case 0: // 深色
+        colors.base = QColor(30, 30, 30);
+        colors.text = QColor(220, 220, 220);
+        colors.highlight = QColor(75, 110, 175);
+        colors.highlightedText = Qt::white;
+        colors.lineHighlight = QColor(45, 45, 60);
+        colors.sidebarBg = QColor(40, 40, 40);
+        colors.sidebarFg = Qt::white;
+        break;
+    case 1: // 浅色
+        colors.base = QColor(250, 250, 250);
+        colors.text = QColor(0, 0, 0);
+        colors.highlight = QColor(200, 200, 255);
+        colors.highlightedText = Qt::black;
+        colors.lineHighlight = QColor(230, 230, 240);
+        colors.sidebarBg = QColor(240, 240, 240);
+        colors.sidebarFg = Qt::black;
+        break;
+    case 2: // 海洋
+        colors.base = QColor(20, 40, 50);
+        colors.text = QColor(210, 230, 240);
+        colors.highlight = QColor(60, 140, 180);
+        colors.highlightedText = Qt::white;
+        colors.lineHighlight = QColor(40, 60, 70);
+        colors.sidebarBg = QColor(35, 50, 60);
+        colors.sidebarFg = QColor(200, 220, 230);
+        break;
+    default:
+        // 默认深色
+        colors.base = QColor(30, 30, 30);
+        colors.text = QColor(220, 220, 220);
+        colors.highlight = QColor(75, 110, 175);
+        colors.highlightedText = Qt::white;
+        colors.lineHighlight = QColor(45, 45, 60);
+        colors.sidebarBg = QColor(40, 40, 40);
+        colors.sidebarFg = Qt::white;
+        break;
+    }
+    return colors;
+}
+
+void MainWindow::onSystemThemeChanged()
+{
+    if (m_currentTheme == 3) {
+        applyTheme();
+    }
 }
 
 void MainWindow::createMenuBar()
@@ -193,7 +238,6 @@ void MainWindow::createMenuBar()
     connect(findAction, &QAction::triggered, this, &MainWindow::showFindReplaceDialog);
     editMenu->addAction(findAction);
 
-    // 设置：直接是一个菜单项
     QAction *settingsAction = new QAction("设置(&S)", this);
     connect(settingsAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
     menuBar()->addAction(settingsAction);
@@ -439,7 +483,7 @@ void MainWindow::about()
         "<hr>"
         "<p>特性：</p>"
         "<ul>"
-        "<li>深色配色方案</li>"
+        "<li>深色/浅色/海洋/跟随系统 主题</li>"
         "<li>多语言语法高亮：C/C++, Java, Python, JavaScript, HTML, CSS, XML, JSON, .gitignore, .properties, .ini</li>"
         "<li>根据文件后缀自动识别高亮规则</li>"
         "<li>行号显示</li>"
@@ -596,7 +640,6 @@ static QString formatCharCount(int count)
         return QString::number(count) + "字";
     }
     double w = count / 10000.0;
-    // 保留一位小数，如果小数部分接近0则取整
     if (qAbs(w - qRound(w)) < 0.05) {
         return QString::number(qRound(w)) + "w字";
     } else {
@@ -609,14 +652,12 @@ void MainWindow::updateStatusBar()
     QTextDocument *doc = m_editor->document();
     if (!doc) return;
 
-    int totalChars = doc->characterCount();          // 包含换行符
+    int totalChars = doc->characterCount();
     int totalLines = doc->blockCount();
 
-    // 获取光标和选中字符数
     QTextCursor cursor = m_editor->textCursor();
     int selectedChars = cursor.selectedText().length();
 
-    // 根据用户设置格式化数字
     QString totalFormatted = formatLargeNumber(totalChars, m_largeNumberFormat);
     QString selectedFormatted = formatLargeNumber(selectedChars, m_largeNumberFormat);
 
@@ -626,7 +667,6 @@ void MainWindow::updateStatusBar()
     else
         wordDisplay = QString("%1 字").arg(totalFormatted);
 
-    // 文件大小显示
     qint64 fileSize = 0;
     if (!m_isUntitled && !m_currentFilePath.isEmpty()) {
         QFileInfo fi(m_currentFilePath);
@@ -675,7 +715,7 @@ void MainWindow::showGotoDialog()
         }
     } else {
         line = text.toInt(&ok);
-        if (ok) column = 1; // 默认行首
+        if (ok) column = 1;
     }
 
     if (!ok || line < 1) {
@@ -732,7 +772,7 @@ void MainWindow::showSettingsDialog()
 {
     SettingsDialog dlg(this);
     if (dlg.exec() == QDialog::Accepted) {
-        reloadSettings();           // 重新加载所有设置，包括配色方案
+        reloadSettings();
         if (m_isUntitled) {
             applyDefaultEncoding();
         }
@@ -760,4 +800,28 @@ void MainWindow::restartApplication(const QString &fileToOpen)
     }
     QProcess::startDetached(appPath, arguments);
     QCoreApplication::quit();
+}
+
+QString MainWindow::formatLargeNumber(int value, int format) const
+{
+    if (format == 0) return QString::number(value);
+    if (format == 1) {
+        double v = value / 1000.0;
+        if (value < 1000) return QString::number(value);
+        return QString::number(v, 'f', 1) + "k";
+    }
+    if (format == 2) {
+        double v = value / 10000.0;
+        if (value < 10000) return QString::number(value);
+        return QString::number(v, 'f', 1) + "w";
+    }
+    return QString::number(value);
+}
+
+void MainWindow::applyDefaultEncoding()
+{
+    QSettings settings(configFilePath(), QSettings::IniFormat);
+    QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
+    m_currentEncoding = defaultEnc;
+    updateStatusBar();
 }
