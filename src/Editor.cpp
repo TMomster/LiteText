@@ -19,9 +19,11 @@ Editor::Editor(QWidget *parent)
     , m_useTabs(false)
     , m_autoCompletionEnabled(true)
     , m_completionAcceptKey(Qt::Key_Tab)
-    , m_wordWrapEnabled(true)   // 默认开启自动换行
+    , m_wordWrapEnabled(true)
     , m_currentLanguage("txt")
     , m_commentPrefix("//")
+    , m_currentCandidateIndex(-1)
+    , m_needsFullCollect(true)
 {
     setLineWrapMode(m_wordWrapEnabled ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
     m_sidebar = new EditorSidebar(this);
@@ -36,6 +38,9 @@ Editor::Editor(QWidget *parent)
     m_suggestionFormat.setFontItalic(true);
 
     connect(document(), &QTextDocument::contentsChanged, this, &Editor::onDocumentContentsChanged);
+
+    // 初始化当前行高亮
+    updateCurrentLineHighlight();
 }
 
 Editor::~Editor() {}
@@ -44,7 +49,7 @@ void Editor::setTabWidth(int spaces)
 {
     if (spaces >= 1 && spaces <= 8) {
         m_tabWidth = spaces;
-        updateTabStopWidth(); 
+        updateTabStopWidth();
         emit tabWidthChanged(m_tabWidth);
     }
 }
@@ -53,9 +58,9 @@ int Editor::tabWidth() const { return m_tabWidth; }
 
 void Editor::setUseTabs(bool use)
 {
-     m_useTabs = use;
-     updateTabStopWidth();
-     emit tabWidthChanged(m_tabWidth);
+    m_useTabs = use;
+    updateTabStopWidth();
+    emit tabWidthChanged(m_tabWidth);
 }
 
 void Editor::setWordWrapEnabled(bool enabled)
@@ -91,9 +96,13 @@ void Editor::setAutoCompletionEnabled(bool enabled)
 void Editor::setCompletionAcceptKey(int key) { m_completionAcceptKey = key; }
 void Editor::setKeywordList(const QStringList &keywords) { m_keywordList = keywords; }
 
+// ========== 增量收集实现 ==========
 void Editor::collectIdentifiersFromDocument()
 {
     m_identifierSet.clear();
+    m_identifierFrequency.clear();
+    m_blockWords.clear();
+
     QTextDocument *doc = document();
     if (!doc) return;
 
@@ -102,23 +111,94 @@ void Editor::collectIdentifiersFromDocument()
     while (block.isValid()) {
         QString text = block.text();
         QRegularExpressionMatchIterator it = identifierRegex.globalMatch(text);
+        QSet<QString> wordsInBlock;
         while (it.hasNext()) {
             QRegularExpressionMatch match = it.next();
-            m_identifierSet.insert(match.captured(0));
+            QString word = match.captured(0);
+            m_identifierSet.insert(word);
+            m_identifierFrequency[word] = m_identifierFrequency.value(word, 0) + 1;
+            wordsInBlock.insert(word);
         }
+        if (!wordsInBlock.isEmpty())
+            m_blockWords[block.blockNumber()] = wordsInBlock;
         block = block.next();
+    }
+    m_needsFullCollect = false;
+}
+
+void Editor::updateIdentifiersForBlock(const QTextBlock &block, bool removeOld)
+{
+    if (!block.isValid()) return;
+    int blockNum = block.blockNumber();
+    QString text = block.text();
+
+    QRegularExpression identifierRegex("\\b[a-zA-Z_][a-zA-Z0-9_]*\\b");
+    QRegularExpressionMatchIterator it = identifierRegex.globalMatch(text);
+    QSet<QString> newWords;
+    while (it.hasNext()) {
+        newWords.insert(it.next().captured(0));
+    }
+
+    if (removeOld && m_blockWords.contains(blockNum)) {
+        const QSet<QString> &oldWords = m_blockWords[blockNum];
+        for (const QString &word : oldWords) {
+            int freq = m_identifierFrequency.value(word, 0);
+            if (freq <= 1)
+                m_identifierFrequency.remove(word);
+            else
+                m_identifierFrequency[word] = freq - 1;
+            m_identifierSet.remove(word);
+        }
+        m_blockWords.remove(blockNum);
+    }
+
+    if (!newWords.isEmpty()) {
+        m_blockWords[blockNum] = newWords;
+        for (const QString &word : newWords) {
+            m_identifierSet.insert(word);
+            m_identifierFrequency[word] = m_identifierFrequency.value(word, 0) + 1;
+        }
+    }
+}
+
+void Editor::clearBlockWordsForBlock(int blockNumber)
+{
+    if (m_blockWords.contains(blockNumber)) {
+        const QSet<QString> &words = m_blockWords[blockNumber];
+        for (const QString &word : words) {
+            int freq = m_identifierFrequency.value(word, 0);
+            if (freq <= 1)
+                m_identifierFrequency.remove(word);
+            else
+                m_identifierFrequency[word] = freq - 1;
+            m_identifierSet.remove(word);
+        }
+        m_blockWords.remove(blockNumber);
     }
 }
 
 void Editor::onDocumentContentsChanged()
 {
-    static QTimer *timer = nullptr;
-    if (!timer) {
-        timer = new QTimer(this);
-        timer->setSingleShot(true);
-        connect(timer, &QTimer::timeout, this, &Editor::collectIdentifiersFromDocument);
+    if (!m_autoCompletionEnabled) return;
+
+    QTextCursor cursor = textCursor();
+    QTextBlock currentBlock = cursor.block();
+    if (currentBlock.isValid()) {
+        int blockNum = currentBlock.blockNumber();
+        if (m_needsFullCollect) {
+            static QTimer *fullTimer = nullptr;
+            if (!fullTimer) {
+                fullTimer = new QTimer(this);
+                fullTimer->setSingleShot(true);
+                connect(fullTimer, &QTimer::timeout, this, &Editor::collectIdentifiersFromDocument);
+            }
+            fullTimer->start(300);
+            m_needsFullCollect = false;
+        } else {
+            updateIdentifiersForBlock(currentBlock);
+        }
     }
-    timer->start(150);
+
     buildSuggestion();
 }
 
@@ -126,12 +206,15 @@ void Editor::onCursorPositionChanged()
 {
     clearSuggestion();
     buildSuggestion();
+    updateCurrentLineHighlight();   // 光标移动时更新当前行高亮
 }
 
 void Editor::clearSuggestion()
 {
     if (!m_pendingCompletion.isEmpty()) {
         m_pendingCompletion.clear();
+        m_currentCandidates.clear();
+        m_currentCandidateIndex = -1;
         viewport()->update();
     }
 }
@@ -149,19 +232,20 @@ QString Editor::longestCommonPrefix(const QStringList &strs) {
     return first.left(minLen);
 }
 
-void Editor::buildSuggestion() {
-    if (!m_autoCompletionEnabled) {
-        clearSuggestion();
-        return;
-    }
-    QTextCursor cursor = textCursor();
-    cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
-    QString prefix = cursor.selectedText();
-    if (prefix.isEmpty() || (!prefix.at(0).isLetter() && prefix.at(0) != '_')) {
-        clearSuggestion();
-        return;
-    }
+void Editor::updateIdentifierFrequency(const QString &word)
+{
+    if (word.isEmpty() || (!word[0].isLetter() && word[0] != '_')) return;
+    m_identifierFrequency[word] = m_identifierFrequency.value(word, 0) + 1;
+    m_identifierSet.insert(word);
+}
 
+void Editor::rebuildCandidates(const QString &prefix)
+{
+    m_currentCandidates.clear();
+    m_currentCandidateIndex = -1;
+    if (prefix.isEmpty()) return;
+
+    QTextCursor cursor = textCursor();
     QString currentLine = cursor.block().text();
     int cursorPosInBlock = cursor.positionInBlock();
     bool isPreprocessor = currentLine.trimmed().startsWith('#');
@@ -186,38 +270,116 @@ void Editor::buildSuggestion() {
     }
     if (allWords.contains(prefix)) allWords.remove(prefix);
 
-    QStringList candidates;
     for (const QString &word : allWords) {
         if (word.startsWith(prefix, Qt::CaseInsensitive))
-            candidates.append(word);
+            m_currentCandidates.append(word);
     }
-    if (candidates.isEmpty()) {
-        clearSuggestion();
+    if (m_currentCandidates.isEmpty()) return;
+
+    std::sort(m_currentCandidates.begin(), m_currentCandidates.end(),
+        [this](const QString &a, const QString &b) {
+            int freqA = m_identifierFrequency.value(a, 0);
+            int freqB = m_identifierFrequency.value(b, 0);
+            if (freqA != freqB) return freqA > freqB;
+            if (a.length() != b.length()) return a.length() < b.length();
+            return a < b;
+        });
+
+    m_currentCandidateIndex = 0;
+}
+
+void Editor::selectNextCandidate()
+{
+    if (m_currentCandidates.isEmpty() || m_currentCandidateIndex < 0) return;
+    m_currentCandidateIndex = (m_currentCandidateIndex + 1) % m_currentCandidates.size();
+    updateSuggestionFromCurrentCandidate();
+}
+
+void Editor::selectPrevCandidate()
+{
+    if (m_currentCandidates.isEmpty() || m_currentCandidateIndex < 0) return;
+    m_currentCandidateIndex = (m_currentCandidateIndex - 1 + m_currentCandidates.size()) % m_currentCandidates.size();
+    updateSuggestionFromCurrentCandidate();
+}
+
+void Editor::updateSuggestionFromCurrentCandidate()
+{
+    if (m_currentCandidateIndex < 0 || m_currentCandidateIndex >= m_currentCandidates.size()) {
+        m_pendingCompletion.clear();
+        viewport()->update();
         return;
     }
-
-    std::sort(candidates.begin(), candidates.end(), [](const QString &a, const QString &b) {
-        if (a.length() != b.length()) return a.length() < b.length();
-        return a < b;
-    });
-    QString bestMatch = candidates.first();
-    QString suffix = bestMatch.mid(prefix.length());
-    if (suffix.isEmpty()) {
-        clearSuggestion();
-        return;
-    }
-
-    m_pendingCompletion = suffix;
+    QTextCursor cursor = textCursor();
+    cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
+    QString prefix = cursor.selectedText();
+    QString bestMatch = m_currentCandidates[m_currentCandidateIndex];
+    m_pendingCompletion = bestMatch.mid(prefix.length());
     viewport()->update();
+}
+
+void Editor::buildSuggestion() {
+    if (!m_autoCompletionEnabled) {
+        clearSuggestion();
+        return;
+    }
+
+    QTextCursor cursor = textCursor();
+    int pos = cursor.position();
+    QTextDocument *doc = document();
+
+    // 检查光标后是否有非空白字符（单词内部禁止联想）
+    if (pos < doc->characterCount()) {   // 未到文档结尾
+        QChar nextChar = doc->characterAt(pos);
+        if (!nextChar.isNull() && !nextChar.isSpace()) {
+            clearSuggestion();
+            return;
+        }
+    }
+
+    cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
+    QString prefix = cursor.selectedText();
+    if (prefix.isEmpty() || (!prefix.at(0).isLetter() && prefix.at(0) != '_')) {
+        clearSuggestion();
+        return;
+    }
+
+    rebuildCandidates(prefix);
+    updateSuggestionFromCurrentCandidate();
 }
 
 void Editor::acceptSuggestion()
 {
     if (m_pendingCompletion.isEmpty()) return;
     QTextCursor cursor = textCursor();
+    cursor.beginEditBlock();
     cursor.insertText(m_pendingCompletion);
+    cursor.endEditBlock();
+
+    cursor.movePosition(QTextCursor::StartOfWord);
+    cursor.movePosition(QTextCursor::EndOfWord, QTextCursor::KeepAnchor);
+    QString completedWord = cursor.selectedText();
+    updateIdentifierFrequency(completedWord);
+
     m_pendingCompletion.clear();
+    m_currentCandidates.clear();
+    m_currentCandidateIndex = -1;
     viewport()->update();
+}
+
+// 当前行高亮实现
+void Editor::updateCurrentLineHighlight()
+{
+    QList<QTextEdit::ExtraSelection> extraSelections;
+    if (!isReadOnly()) {
+        QTextEdit::ExtraSelection selection;
+        QColor lineColor = QColor(45, 45, 60); // 行高亮颜色
+        selection.format.setBackground(lineColor);
+        selection.format.setProperty(QTextFormat::FullWidthSelection, true);
+        selection.cursor = textCursor();
+        selection.cursor.clearSelection();
+        extraSelections.append(selection);
+    }
+    setExtraSelections(extraSelections);
 }
 
 void Editor::paintEvent(QPaintEvent *event)
@@ -237,12 +399,11 @@ void Editor::paintEvent(QPaintEvent *event)
     int startX = cursorRect.x();
     int startY = cursorRect.y() + painter.fontMetrics().ascent();
 
-    // 计算建议文本宽度，避免超出右边界
     int textWidth = painter.fontMetrics().horizontalAdvance(m_pendingCompletion);
     int viewportWidth = viewport()->width();
     if (startX + textWidth > viewportWidth) {
-        startX = viewportWidth - textWidth - 2; // 留2像素右边距
-        if (startX < 0) startX = 0;            // 防止文本过宽时超出左边界
+        startX = viewportWidth - textWidth - 2;
+        if (startX < 0) startX = 0;
     }
 
     painter.drawText(startX, startY, m_pendingCompletion);
@@ -257,6 +418,20 @@ void Editor::keyPressEvent(QKeyEvent *event)
         return;
     }
 
+    // Control+Up/Down 切换候选
+    if (event->modifiers() == Qt::ControlModifier) {
+        if (event->key() == Qt::Key_Down) {
+            selectNextCandidate();
+            event->accept();
+            return;
+        } else if (event->key() == Qt::Key_Up) {
+            selectPrevCandidate();
+            event->accept();
+            return;
+        }
+    }
+
+    // 采纳建议
     if (m_autoCompletionEnabled && !m_pendingCompletion.isEmpty() && event->key() == m_completionAcceptKey) {
         acceptSuggestion();
         event->accept();
@@ -272,7 +447,6 @@ void Editor::keyPressEvent(QKeyEvent *event)
         }
         return;
     }
-
     if (event->key() == Qt::Key_Backtab) {
         if (textCursor().hasSelection()) {
             unindentSelection();
@@ -312,20 +486,17 @@ void Editor::keyPressEvent(QKeyEvent *event)
     }
     if (event->key() == Qt::Key_Backspace) {
         QTextCursor cursor = textCursor();
-        // 如果有选中文本，交给默认处理（删除选中）
         if (cursor.hasSelection()) {
             QPlainTextEdit::keyPressEvent(event);
             buildSuggestion();
             return;
         }
-        // 光标在行首，无字符可删，交给默认处理
         if (cursor.atBlockStart()) {
             QPlainTextEdit::keyPressEvent(event);
             buildSuggestion();
             return;
         }
-    
-        // 判断光标是否位于行首缩进区域（光标前全是空白字符）
+
         QTextBlock block = cursor.block();
         QString lineText = block.text();
         int posInBlock = cursor.positionInBlock();
@@ -336,11 +507,9 @@ void Editor::keyPressEvent(QKeyEvent *event)
                 break;
             }
         }
-    
+
         if (onlyWhitespaceBefore) {
-            // 行首缩进区域：执行组删除
             if (!m_useTabs) {
-                // 空格模式：尝试删除一组空格（m_tabWidth 个）
                 int spacesBefore = 0;
                 int pos = posInBlock - 1;
                 while (pos >= 0 && lineText[pos] == ' ') {
@@ -351,25 +520,20 @@ void Editor::keyPressEvent(QKeyEvent *event)
                     cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, m_tabWidth);
                     cursor.removeSelectedText();
                 } else if (spacesBefore > 0) {
-                    // 不够一组，删除实际空格数
                     cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, spacesBefore);
                     cursor.removeSelectedText();
                 } else {
-                    // 不是空格（可能是残留制表符），退化为普通删除
                     QPlainTextEdit::keyPressEvent(event);
                 }
             } else {
-                // 制表符模式：删除一个制表符
                 cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 1);
                 if (cursor.selectedText() == "\t") {
                     cursor.removeSelectedText();
                 } else {
-                    // 不是制表符，退化为普通删除
                     QPlainTextEdit::keyPressEvent(event);
                 }
             }
         } else {
-            // 非行首缩进区域：普通删除一个字符
             QPlainTextEdit::keyPressEvent(event);
         }
         buildSuggestion();
@@ -377,6 +541,18 @@ void Editor::keyPressEvent(QKeyEvent *event)
     }
 
     QPlainTextEdit::keyPressEvent(event);
+
+    QString text = event->text();
+    if (text.length() == 1 && (text[0].isSpace() || text[0] == '.' || text[0] == ',' || text[0] == ';' || text[0] == ':' ||
+                               text[0] == '?' || text[0] == '!' || text[0] == ')' || text[0] == ']' || text[0] == '}')) {
+        QTextCursor cursor = textCursor();
+        cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 1);
+        cursor.movePosition(QTextCursor::StartOfWord, QTextCursor::KeepAnchor);
+        QString word = cursor.selectedText();
+        if (!word.isEmpty() && (word[0].isLetter() || word[0] == '_'))
+            updateIdentifierFrequency(word);
+    }
+
     buildSuggestion();
 }
 
@@ -534,18 +710,15 @@ void Editor::toggleCommentSelection()
         QTextCursor lineCursor(block);
         lineCursor.movePosition(QTextCursor::StartOfBlock);
         if (hasComment) {
-            // 删除注释前缀
             lineCursor.setPosition(block.position() + firstNonSpace);
             lineCursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor, m_commentPrefix.length());
             lineCursor.removeSelectedText();
-            // 如果后面紧跟一个空格，也删除
             if (lineCursor.block().text().mid(firstNonSpace).startsWith(' ')) {
                 lineCursor.setPosition(block.position() + firstNonSpace);
                 lineCursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor, 1);
                 lineCursor.removeSelectedText();
             }
         } else {
-            // 插入注释前缀 + 一个空格
             lineCursor.setPosition(block.position() + firstNonSpace);
             lineCursor.insertText(m_commentPrefix + " ");
         }
@@ -559,34 +732,6 @@ void Editor::toggleCommentSelection()
 }
 // ================================
 
-EditorSidebar::EditorSidebar(Editor *editor) : QWidget(editor), m_editor(editor) {}
-QSize EditorSidebar::sizeHint() const
-{
-    int digits = QString::number(m_editor->blockCount()).length();
-    int space = 8 + m_editor->fontMetrics().horizontalAdvance(QLatin1Char('9')) * (digits + 1);
-    return QSize(space, 0);
-}
-void EditorSidebar::paintEvent(QPaintEvent *event)
-{
-    QPainter painter(this);
-    painter.fillRect(event->rect(), QColor(40,40,40));
-    painter.setFont(m_editor->font());
-    painter.setPen(Qt::white);
-    QTextBlock block = m_editor->firstVisibleBlockPublic();
-    int blockNumber = block.blockNumber();
-    qreal top = m_editor->blockBoundingGeometryPublic(block).translated(m_editor->contentOffsetPublic()).top();
-    qreal bottom = top + m_editor->blockBoundingRectPublic(block).height();
-    while (block.isValid() && top <= event->rect().bottom()) {
-        if (block.isVisible() && bottom >= event->rect().top()) {
-            painter.drawText(0, (int)top, width()-4, m_editor->fontMetrics().height(), Qt::AlignRight, QString::number(blockNumber+1));
-        }
-        block = block.next();
-        top = bottom;
-        bottom = top + m_editor->blockBoundingRectPublic(block).height();
-        ++blockNumber;
-    }
-}
-
 void Editor::indentSelection()
 {
     QTextCursor cursor = textCursor();
@@ -598,7 +743,6 @@ void Editor::indentSelection()
 
     QTextBlock startBlock = doc->findBlock(startPos);
     QTextBlock endBlock = doc->findBlock(endPos);
-    // 如果选区结束位置恰好位于某行的行首（且不是起始行），则该行不应被操作
     if (endPos == endBlock.position() && endPos != startPos) {
         endBlock = endBlock.previous();
     }
@@ -617,7 +761,6 @@ void Editor::indentSelection()
     }
     cursor.endEditBlock();
 
-    // 重新选中相同的行范围（保持视觉选中）
     QTextCursor newCursor = textCursor();
     newCursor.setPosition(startBlock.position());
     newCursor.setPosition(endBlock.position() + endBlock.length() - 1, QTextCursor::KeepAnchor);
@@ -647,13 +790,11 @@ void Editor::unindentSelection()
         lineCursor.movePosition(QTextCursor::StartOfBlock);
 
         if (m_useTabs) {
-            // 如果行首是制表符，删除一个
             if (lineText.startsWith('\t')) {
                 lineCursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 1);
                 lineCursor.removeSelectedText();
             }
         } else {
-            // 统计行首空格数，最多删除 m_tabWidth 个
             int spaces = 0;
             while (spaces < lineText.length() && lineText[spaces] == ' ') {
                 ++spaces;
@@ -668,9 +809,37 @@ void Editor::unindentSelection()
     }
     cursor.endEditBlock();
 
-    // 重新选中
     QTextCursor newCursor = textCursor();
     newCursor.setPosition(startBlock.position());
     newCursor.setPosition(endBlock.position() + endBlock.length() - 1, QTextCursor::KeepAnchor);
     setTextCursor(newCursor);
+}
+
+// ========== EditorSidebar 实现 ==========
+EditorSidebar::EditorSidebar(Editor *editor) : QWidget(editor), m_editor(editor) {}
+QSize EditorSidebar::sizeHint() const
+{
+    int digits = QString::number(m_editor->blockCount()).length();
+    int space = 8 + m_editor->fontMetrics().horizontalAdvance(QLatin1Char('9')) * (digits + 1);
+    return QSize(space, 0);
+}
+void EditorSidebar::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    painter.fillRect(event->rect(), QColor(40,40,40));
+    painter.setFont(m_editor->font());
+    painter.setPen(Qt::white);
+    QTextBlock block = m_editor->firstVisibleBlockPublic();
+    int blockNumber = block.blockNumber();
+    qreal top = m_editor->blockBoundingGeometryPublic(block).translated(m_editor->contentOffsetPublic()).top();
+    qreal bottom = top + m_editor->blockBoundingRectPublic(block).height();
+    while (block.isValid() && top <= event->rect().bottom()) {
+        if (block.isVisible() && bottom >= event->rect().top()) {
+            painter.drawText(0, (int)top, width()-4, m_editor->fontMetrics().height(), Qt::AlignRight, QString::number(blockNumber+1));
+        }
+        block = block.next();
+        top = bottom;
+        bottom = top + m_editor->blockBoundingRectPublic(block).height();
+        ++blockNumber;
+    }
 }
