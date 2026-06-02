@@ -106,6 +106,7 @@ void MainWindow::reloadSettings()
     bool autoCompletion = settings.value("editor/autoCompletion", true).toBool();
     int acceptKey = settings.value("editor/completionAcceptKey", Qt::Key_Tab).toInt();
     QString defaultEnc = settings.value("editor/defaultEncoding", "UTF-8").toString();
+    m_largeNumberFormat = settings.value("editor/largeNumberFormat", 2).toInt();
 
     m_editor->setTabWidth(tabWidth);
     m_editor->setUseTabs(useTabs);
@@ -131,6 +132,22 @@ void MainWindow::reloadSettings()
     updateStatusBar();
 
     onLanguageChanged(m_highlighter->currentLanguage());
+}
+
+QString MainWindow::formatLargeNumber(int value, int format) const
+{
+    if (format == 0) return QString::number(value); // 精确
+    if (format == 1) { // 千位
+        double v = value / 1000.0;
+        if (value < 1000) return QString::number(value);
+        return QString::number(v, 'f', 1) + "k";
+    }
+    if (format == 2) { // 万位
+        double v = value / 10000.0;
+        if (value < 10000) return QString::number(value);
+        return QString::number(v, 'f', 1) + "w";
+    }
+    return QString::number(value);
 }
 
 void MainWindow::applyDefaultEncoding()
@@ -573,32 +590,54 @@ static QString formatFileSize(qint64 size)
         return QString::number(size / (1024.0 * 1024.0), 'f', 2) + " MB";
 }
 
+static QString formatCharCount(int count)
+{
+    if (count < 10000) {
+        return QString::number(count) + "字";
+    }
+    double w = count / 10000.0;
+    // 保留一位小数，如果小数部分接近0则取整
+    if (qAbs(w - qRound(w)) < 0.05) {
+        return QString::number(qRound(w)) + "w字";
+    } else {
+        return QString::number(w, 'f', 1) + "w字";
+    }
+}
+
 void MainWindow::updateStatusBar()
 {
     QTextDocument *doc = m_editor->document();
     if (!doc) return;
 
-    QString plainText = m_editor->toPlainText();
-    int totalChars = plainText.length();
+    int totalChars = doc->characterCount();          // 包含换行符
     int totalLines = doc->blockCount();
 
+    // 获取光标和选中字符数
+    QTextCursor cursor = m_editor->textCursor();
+    int selectedChars = cursor.selectedText().length();
+
+    // 根据用户设置格式化数字
+    QString totalFormatted = formatLargeNumber(totalChars, m_largeNumberFormat);
+    QString selectedFormatted = formatLargeNumber(selectedChars, m_largeNumberFormat);
+
+    QString wordDisplay;
+    if (selectedChars > 0)
+        wordDisplay = QString("%1 / %2 字").arg(selectedFormatted).arg(totalFormatted);
+    else
+        wordDisplay = QString("%1 字").arg(totalFormatted);
+
+    // 文件大小显示
     qint64 fileSize = 0;
     if (!m_isUntitled && !m_currentFilePath.isEmpty()) {
         QFileInfo fi(m_currentFilePath);
         if (fi.exists())
             fileSize = fi.size();
     }
-    if (fileSize == 0) {
-        fileSize = plainText.toUtf8().size();
-    }
-
-    QTextCursor cursor = m_editor->textCursor();
-    int selectedChars = cursor.selectedText().length();
-    QString wordDisplay;
-    if (selectedChars > 0)
-        wordDisplay = QString("%1 / %2 字").arg(selectedChars).arg(totalChars);
+    QString sizeText;
+    if (m_isUntitled)
+        sizeText = "未保存";
     else
-        wordDisplay = QString("%1 字").arg(totalChars);
+        sizeText = formatFileSize(fileSize);
 
     int tabWidth = m_editor->tabWidth();
     QString tabMode = m_editor->useTabs() ? "Tab:T" : QString("Tab:%1S").arg(tabWidth);
@@ -608,7 +647,7 @@ void MainWindow::updateStatusBar()
 
     QString statusText = QString("编码: %1 | 大小: %2 | %3 | %4 行 | %5 | %6:%7")
         .arg(m_currentEncoding)
-        .arg(formatFileSize(fileSize))
+        .arg(sizeText)
         .arg(wordDisplay)
         .arg(totalLines)
         .arg(tabMode)
