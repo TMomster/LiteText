@@ -81,9 +81,28 @@ private:
     QString m_currentLanguage;
     QString m_commentPrefix;
 
+    // ========== 智慧联想增强 ==========
+    QHash<QString, int> m_identifierFrequency;
+    QHash<int, QSet<QString>> m_blockWords;
+    QStringList m_currentCandidates;
+    int m_currentCandidateIndex;
+    bool m_needsFullCollect;
+
+    void updateIdentifierFrequency(const QString &word);
+    void rebuildCandidates(const QString &prefix);
+    void selectNextCandidate();
+    void selectPrevCandidate();
+    void updateSuggestionFromCurrentCandidate();
+    void updateIdentifiersForBlock(const QTextBlock &block, bool removeOld = true);
+    void clearBlockWordsForBlock(int blockNumber);
+    void collectIdentifiersFromDocument();
+    // =================================
+
+    // 当前行高亮
+    void updateCurrentLineHighlight();
+
     QString longestCommonPrefix(const QStringList &strs);
     void buildSuggestion();
-    void collectIdentifiersFromDocument();
     void clearSuggestion();
     void acceptSuggestion();
 
@@ -94,9 +113,9 @@ private:
     void duplicateLine();
     void insertIndentedNewLine();
 
-    void toggleCommentSelection();  // Ctrl+/ 切换注释
-    void indentSelection();     // 选中行增加缩进
-    void unindentSelection();   // 选中行减少缩进
+    void toggleCommentSelection();
+    void indentSelection();
+    void unindentSelection();
 };
 
 class EditorSidebar : public QWidget
