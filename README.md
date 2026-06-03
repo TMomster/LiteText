@@ -6,13 +6,12 @@
 
 ## 特性
 
-- 深色主题，支持多种配色方案（VS Code Dark+、GitHub Dark、高对比）
-- 语法高亮：C/C++、Java、Python、JavaScript、HTML、CSS、XML、YAML、.gitignore、.properties、.ini
-- 行号显示
-- 查找/替换 (Ctrl+F)
-- 文件编码切换 (UTF-8 / UTF-8-BOM / GBK)
-- Tab 行为配置（插入制表符或自定义空格数）
-- 智能缩进、快捷键操作（复制/剪切整行、复制行、Ctrl+滚轮缩放）
+- 多主题切换，可选配色方案
+- 多种语法高亮支持：C/C++、Java、Python、JavaScript、HTML、CSS、XML、YAML、.gitignore、.properties、.ini、JSON
+- 行号显示，当前行强调
+- 支持查找替换
+- 支持 Tab 行为配置（插入制表符或指定空格数）
+- 代码智慧联想，可自选开启
 - 完全本地运行，无网络访问
 
 ## 构建要求
@@ -23,12 +22,12 @@
 
 ## 构建步骤
 
-`ash
+```bash
 mkdir build
 cd build
 cmake .. -G "MinGW Makefiles"
 cmake --build . --config Release
-`
+```
 
 ## 许可证
 
